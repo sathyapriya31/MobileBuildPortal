@@ -6,7 +6,7 @@ import { AppError } from '../middleware/errorHandler.js';
 let buildCounter = 1000;
 
 export async function triggerBuild(req, res) {
-  const { projectId, projectName, repoUrl, provider, branch, platform, androidFormat } = req.body;
+  const { projectId, projectName, repoUrl, provider, branch, platform, androidFormat, versionName, buildType } = req.body;
 
   if (!projectId || !projectName || !repoUrl || !provider || !branch || !platform) {
     throw new AppError('Missing required build parameters', 400);
@@ -27,6 +27,8 @@ export async function triggerBuild(req, res) {
     branch,
     platform,
     androidFormat: (platform === 'android' || platform === 'both') ? (androidFormat || 'apk') : undefined,
+    versionName: versionName || '1.0.0',
+    buildType: buildType || 'testing',
     buildNumber: ++buildCounter,
     status: 'queued',
     logs: [{ timestamp: new Date(), level: 'info', message: 'Build queued' }],

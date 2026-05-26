@@ -49,6 +49,8 @@ export async function setupBuildQueue(io) {
             password: ks.keystorePassword,
             keyPassword: ks.keyPassword,
             filename: ks.originalFilename,
+            firebaseAppId: ks.firebaseAppId || '',
+            firebaseCliToken: ks.firebaseCliToken || '',
           };
           addLog(build, 'info', `Attached keystore details for project: ${build.projectName}`);
         } else {
@@ -65,6 +67,9 @@ export async function setupBuildQueue(io) {
         branch: build.branch,
         platform: build.platform,
         androidFormat: build.androidFormat || 'apk',
+        versionCode: build.buildNumber,
+        versionName: build.versionName || '1.0.0',
+        buildType: build.buildType || 'testing',
         provider: build.provider,
         callbackUrl: `${process.env.BACKEND_URL || 'http://localhost:4000'}/api/agent/callback`,
         agentSecret: process.env.BUILD_AGENT_SECRET,

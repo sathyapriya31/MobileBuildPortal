@@ -1,0 +1,2 @@
+# Set package_name to the app's applicationId
+package_name("com.example.buildportal")

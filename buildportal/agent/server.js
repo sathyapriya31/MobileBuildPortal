@@ -1,10 +1,14 @@
 import express from 'express';
 import { execSync } from 'child_process';
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, statSync, createReadStream } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import FormData from 'form-data';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 dotenv.config();
 
@@ -46,8 +50,12 @@ async function sendCallback(buildId, payload) {
   }
 }
 
-function runCommand(cmd, cwd) {
-  return execSync(cmd, { cwd, stdio: 'inherit' });
+function runCommand(cmd, cwd, env) {
+  const options = { cwd, stdio: 'inherit' };
+  if (env) {
+    options.env = { ...process.env, ...env };
+  }
+  return execSync(cmd, options);
 }
 
 function fileSize(path) {
@@ -75,7 +83,7 @@ async function uploadFileToBackend(localPath, buildId, platform) {
 mkdirSync(WORKSPACE, { recursive: true });
 
 app.post('/build', async (req, res) => {
-  const { buildId, repoUrl, branch, platform, agentSecret, projectName, keystore, androidFormat } = req.body;
+  const { buildId, repoUrl, branch, platform, agentSecret, projectName, keystore, androidFormat, versionCode, versionName, buildType } = req.body;
   if (agentSecret !== AGENT_SECRET) return res.status(403).json({ error: 'Forbidden' });
   if (!buildId || !repoUrl || !branch || !platform) return res.status(400).json({ error: 'Missing params' });
 
@@ -131,6 +139,34 @@ app.post('/build', async (req, res) => {
         await sendLog(buildId, 'info', 'Detected Android project in "android" subdirectory.');
       }
 
+      // Perfect Zero-Config Automation: Inject centralized master Fastlane configs if not present in the repository
+      const repoFastlanePath = join(gradleDir, 'fastlane');
+      const repoGemfilePath = join(gradleDir, 'Gemfile');
+      
+      if (!existsSync(join(repoFastlanePath, 'Fastfile'))) {
+        await sendLog(buildId, 'info', 'Zero-Config: Injecting master Fastlane configuration templates into cloned project...');
+        try {
+          mkdirSync(repoFastlanePath, { recursive: true });
+          
+          // Resolve sibling paths of agent's master templates
+          const masterFastlaneDir = join(__dirname, '..', 'fastlane');
+          const masterGemfilePath = join(__dirname, '..', 'fastlane', 'Gemfile');
+          
+          const appfileContent = readFileSync(join(masterFastlaneDir, 'Appfile'), 'utf8');
+          const fastfileContent = readFileSync(join(masterFastlaneDir, 'Fastfile'), 'utf8');
+          const gemfileContent = readFileSync(masterGemfilePath, 'utf8');
+          
+          writeFileSync(join(repoFastlanePath, 'Appfile'), appfileContent);
+          writeFileSync(join(repoFastlanePath, 'Fastfile'), fastfileContent);
+          writeFileSync(repoGemfilePath, gemfileContent);
+          
+          await sendLog(buildId, 'info', 'Master Fastlane configurations injected successfully.');
+        } catch (injectErr) {
+          await sendLog(buildId, 'error', `Failed to inject master Fastlane configurations: ${injectErr.message}`);
+          throw injectErr;
+        }
+      }
+
       let signingParams = '';
       if (keystore && keystore.hasKeystore) {
         await sendLog(buildId, 'info', `Downloading project keystore securely: ${keystore.filename}`);
@@ -147,9 +183,37 @@ app.post('/build', async (req, res) => {
         await sendLog(buildId, 'info', 'No keystore provided. Initiating unsigned Android release build.');
       }
 
-      if (existsSync(join(gradleDir, 'fastlane', 'Fastfile'))) {
-        await sendLog(buildId, 'info', 'Running fastlane android beta');
-        runCommand('bundle exec fastlane android beta', gradleDir);
+      if (existsSync(join(repoFastlanePath, 'Fastfile'))) {
+        await sendLog(buildId, 'info', 'Installing Fastlane bundler dependencies (AWS S3 & Firebase)...');
+        try {
+          runCommand('bundle install', gradleDir);
+        } catch (bundleErr) {
+          await sendLog(buildId, 'warn', `bundle install notice (proceeding with compilation): ${bundleErr.message}`);
+        }
+
+        await sendLog(buildId, 'info', 'Running fastlane build_and_distribute...');
+        
+        let fastlaneCmd = 'bundle exec fastlane build_and_distribute';
+        fastlaneCmd += ` build_id:"${buildId}"`;
+        fastlaneCmd += ` backend_url:"${BACKEND_URL}"`;
+        fastlaneCmd += ` version_code:"${versionCode || 1}"`;
+        fastlaneCmd += ` version_name:"${versionName || '1.0.0'}"`;
+        fastlaneCmd += ` build_type:"${buildType || 'testing'}"`;
+        fastlaneCmd += ` branch:"${branch || 'main'}"`;
+
+        const env = {};
+        if (keystore && keystore.hasKeystore) {
+          const keystoreLocalPath = join(gradleDir, keystore.filename || 'release.keystore');
+          fastlaneCmd += ` keystore_path:"${keystoreLocalPath}"`;
+          fastlaneCmd += ` store_password:"${keystore.password}"`;
+          fastlaneCmd += ` key_alias:"${keystore.alias}"`;
+          fastlaneCmd += ` key_password:"${keystore.keyPassword}"`;
+          
+          if (keystore.firebaseAppId) env.FIREBASE_APP_ID = keystore.firebaseAppId;
+          if (keystore.firebaseCliToken) env.FIREBASE_CLI_TOKEN = keystore.firebaseCliToken;
+        }
+
+        runCommand(fastlaneCmd, gradleDir, env);
       } else {
         // Ensure gradlew is executable on UNIX systems
         try {

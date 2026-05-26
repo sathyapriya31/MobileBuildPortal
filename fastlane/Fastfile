@@ -1,0 +1,248 @@
+# Fastlane configuration for Mobile Build Portal
+
+# Store build parameters globally in lane_context so that the error handler can access them.
+error do |lane, exception|
+  build_id = lane_context[:build_id]
+  backend_url = lane_context[:backend_url]
+  
+  if build_id && backend_url
+    UI.error("STEP 6: Build failed! Notifying backend...")
+    begin
+      require 'net/http'
+      require 'uri'
+      require 'json'
+
+      uri = URI.parse("#{backend_url}/api/build/webhook")
+      header = {'Content-Type': 'application/json'}
+      payload = {
+        build_id: build_id,
+        status: "failed",
+        error_message: exception.message
+      }
+
+      http = Net::HTTP.new(uri.host, uri.port)
+      if uri.scheme == 'https'
+        http.use_ssl = true
+      end
+      
+      request = Net::HTTP::Post.new(uri.request_uri, header)
+      request.body = payload.to_json
+
+      response = http.request(request)
+      UI.message("Backend error webhook callback response: #{response.code}")
+    rescue => err
+      UI.error("Failed to notify backend about error: #{err.message}")
+    end
+  else
+    UI.error("Build failed in lane '#{lane}', but no build_id or backend_url found in lane_context to notify backend.")
+  end
+end
+
+desc "Build, sign, upload, and optionally distribute the Android application"
+lane :build_and_distribute do |options|
+  # Store parameters in lane_context for global access in error handler
+  lane_context[:build_id] = options[:build_id]
+  lane_context[:backend_url] = options[:backend_url]
+  lane_context[SharedValues::PLATFORM_NAME] = :android
+
+  version_code = options[:version_code]
+  version_name = options[:version_name]
+  build_id = options[:build_id]
+  backend_url = options[:backend_url]
+  build_type = options[:build_type] || "testing"
+  branch = options[:branch] || "main"
+
+  # Validate mandatory options
+  raise "Missing mandatory option: build_id" unless build_id
+  raise "Missing mandatory option: backend_url" unless backend_url
+
+  # STEP 1 — Bump version
+  UI.message("STEP 1: Bumping version name to '#{version_name}' and code to '#{version_code}'...")
+  UI.message("Fastlane current working directory: #{Dir.pwd}")
+  
+  # Determine base search directories. If Dir.pwd ends with 'fastlane', include '..' as a base search directory.
+  search_bases = ["."]
+  if Dir.pwd.end_with?("fastlane")
+    search_bases << ".."
+  end
+
+  gradle_file = nil
+  possible_paths = []
+  
+  search_bases.each do |base|
+    possible_paths << File.join(base, "app/build.gradle")
+    possible_paths << File.join(base, "app/build.gradle.kts")
+    possible_paths << File.join(base, "build.gradle")
+    possible_paths << File.join(base, "build.gradle.kts")
+  end
+
+  possible_paths.each do |path|
+    if File.exist?(path)
+      gradle_file = path
+      break
+    end
+  end
+
+  # Fallback to search recursively for any build.gradle or build.gradle.kts
+  if !gradle_file
+    UI.important("Gradle build file not found in default paths. Searching recursively...")
+    found_files = []
+    
+    search_bases.each do |base|
+      glob_pattern_groovy = File.join(base, "**/build.gradle")
+      glob_pattern_kotlin = File.join(base, "**/build.gradle.kts")
+      
+      found_files += Dir.glob(glob_pattern_groovy)
+      found_files += Dir.glob(glob_pattern_kotlin)
+    end
+    
+    # Filter files to find the one inside 'app' or containing 'versionCode'
+    found_files.each do |file|
+      next unless File.file?(file)
+      content = File.read(file) rescue ""
+      if file.include?("app/") && content.include?("versionCode")
+        gradle_file = file
+        break
+      end
+    end
+    
+    # Fallback to the first found file if still nil
+    gradle_file ||= found_files.first
+  end
+
+  if gradle_file && File.exist?(gradle_file)
+    UI.message("Found Gradle build file at: #{gradle_file}")
+    gradle_content = File.read(gradle_file)
+    
+    # Support both Groovy (versionCode 12) and Kotlin (versionCode = 12) syntax
+    if version_code
+      gradle_content.gsub!(/versionCode\s+(\d+)/, "versionCode #{version_code}")
+      gradle_content.gsub!(/versionCode\s*=\s*(\d+)/, "versionCode = #{version_code}")
+    end
+    
+    if version_name
+      gradle_content.gsub!(/versionName\s+["']([^"']+)["']/, "versionName \"#{version_name}\"")
+      gradle_content.gsub!(/versionName\s*=\s*["']([^"']+)["']/, "versionName = \"#{version_name}\"")
+    end
+    
+    File.write(gradle_file, gradle_content)
+    UI.message("Successfully bumped version in #{gradle_file}")
+  else
+    raise "Could not find any build.gradle or build.gradle.kts file to bump versions."
+  end
+
+  # STEP 2 — Build signed APK
+  UI.message("STEP 2: Compiling and signing Android app...")
+  gradle(
+    task: "clean assembleRelease",
+    properties: {
+      "android.injected.signing.store.file" => options[:keystore_path],
+      "android.injected.signing.store.password" => options[:store_password],
+      "android.injected.signing.key.alias" => options[:key_alias],
+      "android.injected.signing.key.password" => options[:key_password]
+    }
+  )
+
+  apk_path = lane_context[SharedValues::GRADLE_APK_OUTPUT_PATH]
+  raise "APK file not found at #{apk_path}" unless File.exist?(apk_path)
+
+  # STEP 3 — Upload APK to AWS S3
+  UI.message("STEP 3: Uploading APK to AWS S3...")
+  s3_result = aws_s3(
+    bucket: ENV["S3_BUCKET_NAME"],
+    region: ENV["AWS_REGION"],
+    access_key: ENV["AWS_ACCESS_KEY_ID"],
+    secret_access_key: ENV["AWS_SECRET_ACCESS_KEY"],
+    apk: apk_path,
+    path: "builds/#{version_name}/",
+    acl: ""
+  )
+
+  # Capture S3 URL. If s3_result is not directly a string or doesn't have URL, construct fallback.
+  s3_url = nil
+  if s3_result.is_a?(Hash)
+    s3_url = s3_result[:s3_url] || s3_result[:url]
+  elsif s3_result.is_a?(String)
+    s3_url = s3_result
+  end
+
+  if !s3_url || s3_url.empty?
+    s3_url = "https://#{ENV["S3_BUCKET_NAME"]}.s3.#{ENV["AWS_REGION"]}.amazonaws.com/builds/#{version_name}/#{File.basename(apk_path)}"
+  end
+  UI.message("Uploaded successfully. S3 Public URL: #{s3_url}")
+
+  # STEP 4 — Distribute via Firebase App Distribution (Testing builds only)
+  if build_type == "testing"
+    UI.message("STEP 4: Distributing APK to internal testers via Firebase App Distribution...")
+    
+    # Auto-detect Firebase App ID from google-services.json if not passed in ENV or options
+    app_id = ENV["FIREBASE_APP_ID"] || options[:firebase_app_id]
+    
+    gs_file = nil
+    search_bases.each do |base|
+      path = File.join(base, "app/google-services.json")
+      if File.exist?(path)
+        gs_file = path
+        break
+      end
+    end
+
+    if (!app_id || app_id.empty?) && gs_file
+      begin
+        require 'json'
+        gs_content = JSON.parse(File.read(gs_file))
+        if gs_content["client"] && gs_content["client"].any?
+          app_id = gs_content["client"][0]["client_info"]["mobilesdk_app_id"]
+          UI.message("Auto-detected Firebase App ID from #{gs_file}: #{app_id}")
+        end
+      rescue => err
+        UI.error("Failed to parse #{gs_file}: #{err.message}")
+      end
+    end
+
+    raise "Missing FIREBASE_APP_ID. Ensure it is configured in the portal or that app/google-services.json exists with mobilesdk_app_id." if !app_id || app_id.empty?
+
+    firebase_app_distribution(
+      app: app_id,
+      apk_path: apk_path,
+      firebase_cli_token: ENV["FIREBASE_CLI_TOKEN"],
+      # groups: "internal-testers",
+      release_notes: "Build #{version_name} from branch: #{branch}"
+    )
+    UI.message("Firebase App Distribution finished.")
+  else
+    UI.message("STEP 4: Skipped Firebase App Distribution because build_type is '#{build_type}'.")
+  end
+
+  # STEP 5 — Notify backend
+  UI.message("STEP 5: Sending success notification webhook to backend...")
+  begin
+    require 'net/http'
+    require 'uri'
+    require 'json'
+
+    uri = URI.parse("#{backend_url}/api/build/webhook")
+    header = {'Content-Type': 'application/json'}
+    payload = {
+      build_id: build_id,
+      status: "success",
+      s3_url: s3_url,
+      version_code: version_code,
+      version_name: version_name
+    }
+
+    http = Net::HTTP.new(uri.host, uri.port)
+    if uri.scheme == 'https'
+      http.use_ssl = true
+    end
+    
+    request = Net::HTTP::Post.new(uri.request_uri, header)
+    request.body = payload.to_json
+
+    response = http.request(request)
+    UI.message("Backend success webhook callback response: #{response.code}")
+  rescue => err
+    UI.error("Failed to notify backend about success: #{err.message}")
+    raise err # re-raise to fail the build so the user is aware
+  end
+end

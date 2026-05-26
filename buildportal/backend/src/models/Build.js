@@ -9,6 +9,8 @@ const buildSchema = new mongoose.Schema({
   branch: { type: String, required: true },
   platform: { type: String, enum: ['android', 'ios', 'both'], required: true },
   androidFormat: { type: String, enum: ['apk', 'aab'], default: 'apk' },
+  versionName: { type: String, default: '1.0.0' },
+  buildType: { type: String, enum: ['release', 'testing'], default: 'testing' },
   buildNumber: Number,
   status: {
     type: String,

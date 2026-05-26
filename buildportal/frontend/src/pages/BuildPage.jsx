@@ -42,6 +42,9 @@ export default function BuildPage() {
   const [keystorePass, setKeystorePass] = useState('');
   const [keyPass, setKeyPass] = useState('');
   const [uploadingKS, setUploadingKS] = useState(false);
+  const [versionName, setVersionName] = useState('1.0.0');
+  const [buildType, setBuildType] = useState('testing');
+  const [firebaseCliToken, setFirebaseCliToken] = useState('');
 
   useEffect(() => {
     if (user) dispatch(fetchRepos({ provider: user.provider, search }));
@@ -80,6 +83,7 @@ export default function BuildPage() {
     formData.append('keystoreAlias', keystoreAlias);
     formData.append('keystorePassword', keystorePass);
     formData.append('keyPassword', keyPass);
+    formData.append('firebaseCliToken', firebaseCliToken);
     try {
       const { data } = await api.post('/keystores', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setKeystoreStatus(data.keystore);
@@ -87,6 +91,43 @@ export default function BuildPage() {
       setKeystoreFile(null);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Upload failed');
+    } finally {
+      setUploadingKS(false);
+    }
+  };
+
+  const handleUpdateFirebaseOnly = async () => {
+    if (!firebaseCliToken.trim()) {
+      return toast.error('Enter a Firebase CLI Token to register');
+    }
+    setUploadingKS(true);
+    try {
+      const { data } = await api.put('/keystores/firebase', {
+        projectId: String(selectedRepo.id),
+        firebaseCliToken: firebaseCliToken.trim(),
+      });
+      setKeystoreStatus(data.keystore);
+      toast.success('Firebase CLI Token updated! 🔥');
+      setFirebaseCliToken('');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update token');
+    } finally {
+      setUploadingKS(false);
+    }
+  };
+
+  const handleDisconnectFirebase = async () => {
+    setUploadingKS(true);
+    try {
+      const { data } = await api.put('/keystores/firebase', {
+        projectId: String(selectedRepo.id),
+        firebaseCliToken: '',
+      });
+      setKeystoreStatus(data.keystore);
+      toast.success('Firebase Distribution disconnected!');
+      setFirebaseCliToken('');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to disconnect');
     } finally {
       setUploadingKS(false);
     }
@@ -102,6 +143,8 @@ export default function BuildPage() {
       branch,
       platform,
       androidFormat: (platform === 'android' || platform === 'both') ? androidFormat : undefined,
+      versionName,
+      buildType,
     }));
     if (triggerBuild.fulfilled.match(result)) {
       toast.success('Build queued! 🚀');
@@ -157,7 +200,7 @@ export default function BuildPage() {
                 const isIos = p.id === 'ios';
                 const isBoth = p.id === 'both';
                 return (
-                  <button key={p.id} style={{ ...styles.platformBtn, ...(platform === p.id ? { ...styles.platformActive, borderColor: p.color, color: p.color } : {}) }}
+                  <button key={p.id} style={{ ...styles.platformBtn, ...(platform === p.id ? { ...styles.platformActive, border: '1px solid ' + p.color, color: p.color } : {}) }}
                     className="platform-btn-build"
                     onClick={() => setPlatform(p.id)}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', height: '32px', color: platform === p.id ? p.color : Colors.textMuted }} className="platform-icon-wrapper-build">
@@ -202,17 +245,112 @@ export default function BuildPage() {
             )}
           </section>
 
+          {/* Build Options */}
+          {selectedRepo && (
+            <section style={styles.card} className="card-build">
+              <div style={styles.stepLabel}><span style={styles.stepNum}>4</span> Build Options</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginTop: 'var(--space-2)' }}>
+                <div>
+                  <label style={{ ...styles.formatLabel, marginBottom: '6px', display: 'block' }}>Version Name</label>
+                  <input
+                    style={styles.searchInput}
+                    placeholder="e.g. 1.0.0"
+                    value={versionName}
+                    onChange={e => setVersionName(e.target.value)}
+                  />
+                </div>
+                
+                <div>
+                  <label style={{ ...styles.formatLabel, marginBottom: '6px', display: 'block' }}>Version Code</label>
+                  <input
+                    style={{ ...styles.searchInput, opacity: 0.6, cursor: 'not-allowed', marginBottom: 0 }}
+                    value="Auto-incremented (Build #)"
+                    disabled
+                  />
+                </div>
+
+                <div>
+                  <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Build Profile / Type</label>
+                  <div style={styles.formatGrid}>
+                    <button
+                      style={{
+                        ...styles.formatBtn,
+                        ...(buildType === 'testing' ? styles.formatActive : {}),
+                        ...(buildType === 'testing' ? { border: '1px solid ' + Colors.primary, color: Colors.primary, background: Colors.primaryBg } : {})
+                      }}
+                      onClick={() => setBuildType('testing')}
+                    >
+                      🧪 Testing (Firebase)
+                    </button>
+                    <button
+                      style={{
+                        ...styles.formatBtn,
+                        ...(buildType === 'release' ? styles.formatActive : {}),
+                        ...(buildType === 'release' ? { border: '1px solid ' + Colors.success, color: Colors.success, background: Colors.successBg } : {})
+                      }}
+                      onClick={() => setBuildType('release')}
+                    >
+                      🚀 Release (S3 only)
+                    </button>
+                  </div>
+                  <p style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, marginTop: '8px', lineHeight: '1.4' }}>
+                    {buildType === 'testing'
+                      ? '🧪 Testing builds will compile a signed APK, upload to S3, and distribute it to the "internal-testers" group on Firebase App Distribution.'
+                      : '🚀 Release builds will compile a signed APK and host it on AWS S3 for production download (skips Firebase distribution).'}
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
+
           {/* Keystore */}
           {selectedRepo && needsKeystore && (
             <section style={styles.card} className="card-build">
-              <div style={styles.stepLabel}><span style={styles.stepNum}>4</span> Android Keystore</div>
+              <div style={styles.stepLabel}><span style={styles.stepNum}>5</span> Android Keystore</div>
               {keystoreStatus ? (
-                <div style={styles.ksFound}>
-                  <span>✅ Keystore on file: <strong>{keystoreStatus.filename}</strong></span>
-                  <button style={styles.ksReplace} onClick={() => setKeystoreStatus(null)}>Replace</button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
+                  <div style={styles.ksFound}>
+                    <span>✅ Keystore on file: <strong>{keystoreStatus.filename}</strong></span>
+                    <button style={styles.ksReplace} onClick={() => setKeystoreStatus(null)}>Replace</button>
+                  </div>
+                  
+                  <form onSubmit={e => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: `1px solid ${Colors.border}`, paddingTop: '12px', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Firebase App Distribution (Optional)
+                      </div>
+                      {keystoreStatus.firebaseCliToken && (
+                        <span style={{ fontSize: '10px', color: Colors.success, background: Colors.successBg, padding: '2px 6px', borderRadius: '4px', fontWeight: 600, border: `1px solid ${Colors.success}33` }}>
+                          🔥 Connected
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input 
+                        style={{ ...styles.input, flex: 1, marginBottom: 0 }} 
+                        type="password" 
+                        placeholder={keystoreStatus.firebaseCliToken ? "•••••••••••• (Saved)" : "Enter Firebase CLI Token"} 
+                        value={firebaseCliToken} 
+                        onChange={e => setFirebaseCliToken(e.target.value)} 
+                      />
+                      <button style={{ ...styles.uploadBtn, padding: '4px 12px', whiteSpace: 'nowrap' }} onClick={handleUpdateFirebaseOnly} disabled={uploadingKS}>
+                        Save Token
+                      </button>
+                      {keystoreStatus.firebaseCliToken && (
+                        <button style={{ ...styles.uploadBtn, padding: '4px 12px', whiteSpace: 'nowrap', color: '#ef4444', borderColor: '#fee2e2', background: '#fef2f2' }} onClick={handleDisconnectFirebase} disabled={uploadingKS}>
+                          Disconnect
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, lineHeight: '1.4' }}>
+                      {keystoreStatus.firebaseCliToken 
+                        ? '🔥 Firebase Distribution is active! Testing builds will compile, upload to S3, and distribute via Firebase. (App ID will be auto-detected from your google-services.json).'
+                        : 'ℹ️ Firebase App Distribution is not configured for this project. Testing builds will upload to AWS S3, but skip Firebase. Enter your Firebase CLI Token above to activate it.'}
+                    </div>
+                  </form>
                 </div>
               ) : (
-                <div style={styles.ksForm}>
+                <form onSubmit={e => e.preventDefault()} style={styles.ksForm}>
                   <label style={styles.fileLabel}>
                     <input type="file" accept=".jks,.keystore" style={{ display: 'none' }}
                       onChange={e => setKeystoreFile(e.target.files[0])} />
@@ -221,10 +359,16 @@ export default function BuildPage() {
                   <input style={styles.input} placeholder="Key alias" value={keystoreAlias} onChange={e => setKeystoreAlias(e.target.value)} />
                   <input style={styles.input} type="password" placeholder="Keystore password" value={keystorePass} onChange={e => setKeystorePass(e.target.value)} />
                   <input style={styles.input} type="password" placeholder="Key password" value={keyPass} onChange={e => setKeyPass(e.target.value)} />
+                  
+                  <div style={{ borderTop: `1px solid ${Colors.border}`, marginTop: '8px', paddingTop: '12px' }}>
+                    <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: Colors.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Firebase Settings (Optional)</div>
+                    <input style={{ ...styles.input, width: '100%' }} type="password" placeholder="Firebase CLI Token" value={firebaseCliToken} onChange={e => setFirebaseCliToken(e.target.value)} />
+                  </div>
+
                   <button style={styles.uploadBtn} onClick={handleUploadKeystore} disabled={uploadingKS}>
-                    {uploadingKS ? 'Uploading...' : 'Save Keystore'}
+                    {uploadingKS ? 'Uploading...' : 'Save Config & Keystore'}
                   </button>
-                </div>
+                </form>
               )}
             </section>
           )}
@@ -258,7 +402,7 @@ function getStyles() {
     searchInput: { width: '100%', padding: 'var(--space-2) var(--space-3)', background: Colors.surface2, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.text, fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)' },
     repoList: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: 340, overflow: 'auto' },
     repoItem: { padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: `1px solid ${Colors.border}`, background: Colors.surface2, textAlign: 'left', transition: 'all var(--transition)', width: '100%' },
-    repoActive: { borderColor: Colors.primary, background: Colors.primaryBg },
+    repoActive: { border: '1px solid ' + Colors.primary, background: Colors.primaryBg },
     repoName: { ...Fonts.SemiBold, fontSize: 'var(--text-sm)', color: Colors.text, marginBottom: 'var(--space-1)' },
     repoMeta: { fontSize: 'var(--text-xs)', color: Colors.textMuted },
     empty: { color: Colors.textFaint, fontSize: 'var(--text-sm)', textAlign: 'center', padding: 'var(--space-8)' },
@@ -271,7 +415,7 @@ function getStyles() {
     formatLabel: { fontSize: 'var(--text-xs)', ...Fonts.SemiBold, color: Colors.textMuted, marginBottom: 'var(--space-2)', textTransform: 'uppercase', letterSpacing: '0.05em' },
     formatGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' },
     formatBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-2)', padding: 'var(--space-2.5) var(--space-4)', borderRadius: 'var(--radius-md)', border: `1px solid ${Colors.border}`, background: Colors.surface2, color: Colors.textMuted, fontSize: 'var(--text-sm)', ...Fonts.Medium, transition: 'all var(--transition)', cursor: 'pointer' },
-    formatActive: { borderColor: Colors.android, color: Colors.android, background: Colors.androidBg },
+    formatActive: { border: '1px solid ' + Colors.android, color: Colors.android, background: Colors.androidBg },
     ksFound: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-3)', background: Colors.successBg, borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', color: Colors.success },
     ksReplace: { fontSize: 'var(--text-xs)', color: Colors.textMuted, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' },
     ksForm: { display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' },

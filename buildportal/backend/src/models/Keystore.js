@@ -9,6 +9,8 @@ const keystoreSchema = new mongoose.Schema({
   keystoreAlias: String,
   keystorePassword: String,  // Encrypt in prod with KMS
   keyPassword: String,
+  firebaseAppId: String,
+  firebaseCliToken: String,
   originalFilename: String,
 }, { timestamps: true });
 

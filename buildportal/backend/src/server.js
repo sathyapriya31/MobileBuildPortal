@@ -15,6 +15,7 @@ import repoRoutes from './routes/repos.js';
 import buildRoutes from './routes/builds.js';
 import keystoreRoutes from './routes/keystores.js';
 import agentRoutes from './routes/agent.js';
+import buildWebhookRoutes from './routes/buildWebhook.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { setupSocketIO } from './services/socketService.js';
 
@@ -39,6 +40,7 @@ app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }));
 app.use('/api/auth', authRoutes);
 app.use('/api/repos', repoRoutes);
 app.use('/api/builds', buildRoutes);
+app.use('/api/build', buildWebhookRoutes);
 app.use('/api/keystores', keystoreRoutes);
 app.use('/api/agent', agentRoutes);
 
