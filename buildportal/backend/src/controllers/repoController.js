@@ -52,9 +52,10 @@ export async function getGithubBranches(req, res) {
 // ── GitLab repos & branches ───────────────────────────────
 export async function getGitlabRepos(req, res) {
   const { page = 1, per_page = 30, search = '' } = req.query;
+  const gitlabUrl = req.user.gitlabUrl || process.env.GITLAB_URL || 'https://gitlab.com';
   const params = new URLSearchParams({ page, per_page, order_by: 'last_activity_at', owned: 'true' });
   if (search) params.append('search', search);
-  const { data } = await axios.get(`https://gitlab.com/api/v4/projects?${params}`, {
+  const { data } = await axios.get(`${gitlabUrl}/api/v4/projects?${params}`, {
     headers: { Authorization: `Bearer ${req.user.accessToken}` },
   });
   res.json({
@@ -73,7 +74,8 @@ export async function getGitlabRepos(req, res) {
 
 export async function getGitlabBranches(req, res) {
   const { projectId } = req.params;
-  const { data } = await axios.get(`https://gitlab.com/api/v4/projects/${projectId}/repository/branches`, {
+  const gitlabUrl = req.user.gitlabUrl || process.env.GITLAB_URL || 'https://gitlab.com';
+  const { data } = await axios.get(`${gitlabUrl}/api/v4/projects/${projectId}/repository/branches`, {
     headers: { Authorization: `Bearer ${req.user.accessToken}` },
   });
   res.json({ branches: data.map(b => ({ name: b.name, sha: b.commit.id })) });

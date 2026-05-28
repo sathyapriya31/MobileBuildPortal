@@ -53,6 +53,7 @@ export async function githubCallback(req, res) {
 
 // ── GitLab ────────────────────────────────────────────────
 export function gitlabAuth(req, res) {
+  const gitlabUrl = process.env.GITLAB_URL || 'https://gitlab.com';
   const queryParams = {
     client_id: process.env.GITLAB_CLIENT_ID,
     redirect_uri: process.env.GITLAB_REDIRECT_URI,
@@ -63,12 +64,13 @@ export function gitlabAuth(req, res) {
     queryParams.prompt = 'login';
   }
   const params = new URLSearchParams(queryParams);
-  res.redirect(`https://gitlab.com/oauth/authorize?${params}`);
+  res.redirect(`${gitlabUrl}/oauth/authorize?${params}`);
 }
 
 export async function gitlabCallback(req, res) {
   const { code } = req.query;
-  const tokenRes = await axios.post('https://gitlab.com/oauth/token', {
+  const gitlabUrl = process.env.GITLAB_URL || 'https://gitlab.com';
+  const tokenRes = await axios.post(`${gitlabUrl}/oauth/token`, {
     client_id: process.env.GITLAB_CLIENT_ID,
     client_secret: process.env.GITLAB_CLIENT_SECRET,
     code,
@@ -76,7 +78,7 @@ export async function gitlabCallback(req, res) {
     redirect_uri: process.env.GITLAB_REDIRECT_URI,
   });
   const accessToken = tokenRes.data.access_token;
-  const { data: glUser } = await axios.get('https://gitlab.com/api/v4/user', {
+  const { data: glUser } = await axios.get(`${gitlabUrl}/api/v4/user`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const user = await User.findOneAndUpdate(
@@ -86,7 +88,8 @@ export async function gitlabCallback(req, res) {
       username: glUser.username,
       email: glUser.email,
       avatar: glUser.avatar_url,
-      accessToken
+      accessToken,
+      gitlabUrl
     },
     { upsert: true, new: true }
   );

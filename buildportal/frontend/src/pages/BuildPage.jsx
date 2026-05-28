@@ -269,36 +269,38 @@ export default function BuildPage() {
                   />
                 </div>
 
-                <div>
-                  <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Build Profile / Type</label>
-                  <div style={styles.formatGrid}>
-                    <button
-                      style={{
-                        ...styles.formatBtn,
-                        ...(buildType === 'testing' ? styles.formatActive : {}),
-                        ...(buildType === 'testing' ? { border: '1px solid ' + Colors.primary, color: Colors.primary, background: Colors.primaryBg } : {})
-                      }}
-                      onClick={() => setBuildType('testing')}
-                    >
-                      🧪 Testing (Firebase)
-                    </button>
-                    <button
-                      style={{
-                        ...styles.formatBtn,
-                        ...(buildType === 'release' ? styles.formatActive : {}),
-                        ...(buildType === 'release' ? { border: '1px solid ' + Colors.success, color: Colors.success, background: Colors.successBg } : {})
-                      }}
-                      onClick={() => setBuildType('release')}
-                    >
-                      🚀 Release (S3 only)
-                    </button>
+                {platform !== 'ios' && (
+                  <div>
+                    <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Build Profile / Type</label>
+                    <div style={styles.formatGrid}>
+                      <button
+                        style={{
+                          ...styles.formatBtn,
+                          ...(buildType === 'testing' ? styles.formatActive : {}),
+                          ...(buildType === 'testing' ? { border: '1px solid ' + Colors.primary, color: Colors.primary, background: Colors.primaryBg } : {})
+                        }}
+                        onClick={() => setBuildType('testing')}
+                      >
+                        🧪 Testing (Firebase)
+                      </button>
+                      <button
+                        style={{
+                          ...styles.formatBtn,
+                          ...(buildType === 'release' ? styles.formatActive : {}),
+                          ...(buildType === 'release' ? { border: '1px solid ' + Colors.success, color: Colors.success, background: Colors.successBg } : {})
+                        }}
+                        onClick={() => setBuildType('release')}
+                      >
+                        🚀 Release (S3 only)
+                      </button>
+                    </div>
+                    <p style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, marginTop: '8px', lineHeight: '1.4' }}>
+                      {buildType === 'testing'
+                        ? '🧪 Testing builds will compile a signed APK, upload to S3, and distribute it to the "internal-testers" group on Firebase App Distribution.'
+                        : '🚀 Release builds will compile a signed APK and host it on AWS S3 for production download (skips Firebase distribution).'}
+                    </p>
                   </div>
-                  <p style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, marginTop: '8px', lineHeight: '1.4' }}>
-                    {buildType === 'testing'
-                      ? '🧪 Testing builds will compile a signed APK, upload to S3, and distribute it to the "internal-testers" group on Firebase App Distribution.'
-                      : '🚀 Release builds will compile a signed APK and host it on AWS S3 for production download (skips Firebase distribution).'}
-                  </p>
-                </div>
+                )}
               </div>
             </section>
           )}

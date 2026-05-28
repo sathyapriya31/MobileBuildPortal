@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema({
   providerId: { type: String, required: true },
   accessToken: String,
   refreshToken: String,
-  gitlabUrl: { type: String, default: 'https://gitlab.com' },
+  gitlabUrl: { type: String, default: () => process.env.GITLAB_URL || 'https://gitlab.com' },
 }, { timestamps: true });
 
 userSchema.index({ provider: 1, providerId: 1 }, { unique: true });
