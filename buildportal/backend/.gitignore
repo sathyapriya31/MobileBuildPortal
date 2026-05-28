@@ -1,5 +1,9 @@
 .env
-key
+.env.*
+env
+key/
+keys/
+uploads/
 node_modules/
 *.lock
 package-lock.json
