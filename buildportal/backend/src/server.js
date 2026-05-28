@@ -15,6 +15,7 @@ import repoRoutes from './routes/repos.js';
 import buildRoutes from './routes/builds.js';
 import keystoreRoutes from './routes/keystores.js';
 import agentRoutes from './routes/agent.js';
+import appleCredentialRoutes from './routes/appleCredentials.js';
 import buildWebhookRoutes from './routes/buildWebhook.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { setupSocketIO } from './services/socketService.js';
@@ -42,6 +43,7 @@ app.use('/api/repos', repoRoutes);
 app.use('/api/builds', buildRoutes);
 app.use('/api/build', buildWebhookRoutes);
 app.use('/api/keystores', keystoreRoutes);
+app.use('/api/apple-credentials', appleCredentialRoutes);
 app.use('/api/agent', agentRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));

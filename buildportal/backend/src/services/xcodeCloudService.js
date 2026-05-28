@@ -9,32 +9,36 @@ const ASC_BASE_URL = 'https://api.appstoreconnect.apple.com/v1';
  * Generates an Apple App Store Connect JWT token signed with ES256.
  * Valid for 20 minutes as specified by Apple.
  */
-export function generateAppStoreConnectToken() {
-  const apiKeyId = process.env.APPLE_API_KEY_ID;
-  const issuerId = process.env.APPLE_API_ISSUER;
-  let keyPath = process.env.APPLE_API_KEY_PATH || 'key/AuthKey_2GZN4HH9K8.p8';
+export function generateAppStoreConnectToken(appleCreds) {
+  const apiKeyId = appleCreds?.apiKeyId || process.env.APPLE_API_KEY_ID;
+  const issuerId = appleCreds?.apiIssuer || process.env.APPLE_API_ISSUER;
 
   if (!apiKeyId || !issuerId) {
-    throw new Error('Missing Apple App Store Connect Credentials in environment (APPLE_API_KEY_ID / APPLE_API_ISSUER)');
+    throw new Error('Missing Apple App Store Connect Credentials in environment or request (Key ID / Issuer ID)');
   }
 
-  // Resolve private key path
-  if (keyPath.startsWith('/')) {
-    if (!fs.existsSync(keyPath)) {
-      keyPath = join(process.cwd(), keyPath);
-      if (!fs.existsSync(keyPath)) {
-        keyPath = join(process.cwd(), keyPath.substring(1));
-      }
-    }
+  let privateKey;
+  if (appleCreds?.privateKey) {
+    privateKey = appleCreds.privateKey;
   } else {
-    keyPath = join(process.cwd(), keyPath);
+    let keyPath = process.env.APPLE_API_KEY_PATH || 'key/AuthKey_2GZN4HH9K8.p8';
+    if (keyPath.startsWith('/')) {
+      if (!fs.existsSync(keyPath)) {
+        keyPath = join(process.cwd(), keyPath);
+        if (!fs.existsSync(keyPath)) {
+          keyPath = join(process.cwd(), keyPath.substring(1));
+        }
+      }
+    } else {
+      keyPath = join(process.cwd(), keyPath);
+    }
+
+    if (!fs.existsSync(keyPath)) {
+      throw new Error(`Apple Auth Key .p8 file not found at: ${keyPath}`);
+    }
+    privateKey = fs.readFileSync(keyPath, 'utf8');
   }
 
-  if (!fs.existsSync(keyPath)) {
-    throw new Error(`Apple Auth Key .p8 file not found at: ${keyPath}`);
-  }
-
-  const privateKey = fs.readFileSync(keyPath, 'utf8');
   const now = Math.round((new Date()).getTime() / 1000);
   
   const payload = {
@@ -96,9 +100,9 @@ export function parseRepoUrl(url) {
  * @param {function} logCallback - Function to stream logs to DB and sockets
  * @returns {object} The triggered build run details and App ID
  */
-export async function triggerXcodeCloudBuild({ repoUrl, branch, config }, logCallback) {
+export async function triggerXcodeCloudBuild({ repoUrl, branch, config, appleCreds }, logCallback) {
   await logCallback('info', 'Generating App Store Connect API JWT token...');
-  const token = generateAppStoreConnectToken();
+  const token = generateAppStoreConnectToken(appleCreds);
   const headers = {
     'Authorization': `Bearer ${token}`,
     'Content-Type': 'application/json'
@@ -246,7 +250,7 @@ export async function triggerXcodeCloudBuild({ repoUrl, branch, config }, logCal
  * @param {function} logCallback - Function to write logs and socket events
  * @returns {object} The final build run status
  */
-export async function pollXcodeCloudBuild(buildRunId, logCallback) {
+export async function pollXcodeCloudBuild(buildRunId, logCallback, appleCreds) {
   let completed = false;
   let attempts = 0;
   const maxAttempts = 120; // 30 minutes maximum polling time (15s intervals)
@@ -258,7 +262,7 @@ export async function pollXcodeCloudBuild(buildRunId, logCallback) {
     await new Promise(resolve => setTimeout(resolve, 15000));
 
     try {
-      const token = generateAppStoreConnectToken();
+      const token = generateAppStoreConnectToken(appleCreds);
       const headers = { 'Authorization': `Bearer ${token}` };
       const res = await axios.get(`${ASC_BASE_URL}/ciBuildRuns/${buildRunId}`, { headers });
       const buildRun = res.data?.data;

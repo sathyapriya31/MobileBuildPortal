@@ -2,8 +2,9 @@ import Bull from 'bull';
 import axios from 'axios';
 import Build from '../models/Build.js';
 import Keystore from '../models/Keystore.js';
+import AppleCredential from '../models/AppleCredential.js';
 import { notifySlack } from './slackService.js';
-import { getPresignedUrl } from './s3Service.js';
+import { getPresignedUrl, getObjectFromS3 } from './s3Service.js';
 import { parseYaml } from './yamlParser.js';
 import { triggerXcodeCloudBuild, pollXcodeCloudBuild, parseRepoUrl } from './xcodeCloudService.js';
 
@@ -96,16 +97,46 @@ async function processXcodeCloudBuild(build, io) {
       }
     }
 
+    // Step 1.5: Fetch user-uploaded Apple App Store Connect Credentials if they exist
+    let appleCreds = null;
+    try {
+      const appleKey = await AppleCredential.findOne({ userId: build.userId._id || build.userId, projectId: build.projectId });
+      if (appleKey) {
+        await logCallback('info', 'Found project-specific Apple App Store Connect Credentials. Fetching key from S3...');
+        const s3Stream = await getObjectFromS3(appleKey.p8KeyS3Key);
+        
+        // Convert S3 stream to string
+        const privateKey = await new Promise((resolve, reject) => {
+          const chunks = [];
+          s3Stream.on('data', chunk => chunks.push(chunk));
+          s3Stream.on('error', reject);
+          s3Stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        });
+
+        appleCreds = {
+          apiKeyId: appleKey.apiKeyId,
+          apiIssuer: appleKey.apiIssuer,
+          privateKey
+        };
+        await logCallback('info', `Successfully fetched and verified Apple Key ID: ${appleKey.apiKeyId}`);
+      } else {
+        await logCallback('info', 'No project-specific Apple Credentials found. Falling back to default system key.');
+      }
+    } catch (credErr) {
+      await logCallback('warn', `Failed to fetch dynamic Apple credentials: ${credErr.message}. Falling back to default system key.`);
+    }
+
     // Step 2: Trigger build on Xcode Cloud
     const triggerResult = await triggerXcodeCloudBuild({
       repoUrl: build.repoUrl,
       branch: build.branch,
-      config: parsedConfig
+      config: parsedConfig,
+      appleCreds
     }, logCallback);
 
     // Step 3: Start polling
     await logCallback('info', 'Started polling Xcode Cloud build run status...');
-    const pollResult = await pollXcodeCloudBuild(triggerResult.buildRunId, logCallback);
+    const pollResult = await pollXcodeCloudBuild(triggerResult.buildRunId, logCallback, appleCreds);
 
     if (pollResult.status === 'success') {
       await logCallback('info', 'Xcode Cloud Build SUCCEEDED!');
