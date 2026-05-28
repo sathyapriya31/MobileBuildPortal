@@ -1,67 +1,123 @@
 # BuildPortal 🚀
 > **A Premium, Self-Hosted Mobile CI/CD Build Server**
 
-BuildPortal is a high-performance, responsive mobile build automation platform. It allows developers to trigger, queue, and compile Android (`.apk` and `.aab`) and iOS (`.ipa` and TestFlight) applications from GitHub and GitLab repositories, stream build logs line-by-line in real-time, store build artifacts in AWS S3, and receive instant Slack notifications when builds are completed.
+BuildPortal is a high-performance, cloud-native mobile build automation platform. It allows developers to trigger, queue, and compile Android (`.apk` and `.aab`) and iOS (`.ipa` and TestFlight) applications from GitHub repositories, stream build logs line-by-line in real-time, store build artifacts in AWS S3, and receive instant Slack notifications when builds complete.
+
+**Android builds run entirely on GitHub Actions — no self-hosted runners, no Mac Mini required.**
 
 ---
 
 ## 📐 System Architecture
 
-Below is the multi-tier topology showing how the **Frontend**, **Backend API Server**, **Redis Build Queue**, **MongoDB Database**, **S3 Artifact Storage**, and the **Remote Build Runner Agent** communicate:
-
 ```mermaid
 graph TD
-    %% User Tier %%
     Developer[Developer Browser] <-->|HTTP / WebSockets| Frontend[Vite + React Frontend]
-    
-    %% API Tier %%
+
     Frontend <-->|REST API / Real-time Logs| Backend[Node.js Express Backend]
-    
-    %% Storage & Queue Tier %%
-    Backend <-->|Mongoose ODM| MongoDB[(MongoDB Cluster)]
-    Backend <-->|Enqueue Jobs / Event Stream| BullMQ[(Redis + Bull MQ)]
-    
-    %% Infrastructure Services %%
-    Backend -->|Send Notifications| Slack[Slack Webhook Service]
-    
-    %% Build Runner Agent %%
-    Agent[Build Runner Agent] <-->|Fetch Jobs / Stream Logs / Callbacks| Backend
-    Agent -->|Upload .apk / .aab / .ipa| S3[AWS S3 Bucket]
-    Backend -.->|Presigned URLs for Downloads| S3
+
+    Backend <-->|Mongoose ODM| MongoDB[(MongoDB Atlas)]
+    Backend <-->|Enqueue Jobs| BullMQ[(Redis + Bull MQ)]
+
+    Backend -->|workflow_dispatch API| GHA[GitHub Actions Runner]
+    GHA -->|Upload APK/AAB| S3[AWS S3 Bucket]
+    GHA -->|POST callback result| Backend
+
+    Backend -->|Trigger Build Run| XcodeCloud[Apple Xcode Cloud]
+    XcodeCloud -->|Poll status| Backend
+    XcodeCloud -->|Distribute IPA| TestFlight[Apple TestFlight]
+
+    Backend -->|Presigned Download URLs| S3
+    Backend -->|Build notifications| Slack[Slack Webhook]
+```
+
+---
+
+## 🔄 Build Flow
+
+### Android Build Flow
+```
+User clicks "Trigger Build" (Android)
+    ↓
+Backend creates Build record → enqueues job in Redis Bull MQ
+    ↓
+Queue processor calls dispatchToGitHubActions()
+    ↓
+Backend calls GitHub Actions workflow_dispatch API on the user's repo
+    ↓
+GitHub Actions: checkout → npm install → gradlew assembleRelease/bundleRelease
+    ↓
+GitHub Actions uploads APK/AAB to AWS S3
+    ↓
+GitHub Actions POSTs callback to: POST /api/agent/github-actions/callback
+    ↓
+Backend updates build status, generates presigned S3 URL, emits socket event
+    ↓
+Frontend receives real-time update — build complete ✅
+```
+
+### iOS Build Flow
+```
+User clicks "Trigger Build" (iOS)
+    ↓
+Backend creates Build record → enqueues job in Redis Bull MQ
+    ↓
+Queue processor calls processXcodeCloudBuild()
+    ↓
+Backend calls Apple App Store Connect API to trigger Xcode Cloud workflow
+    ↓
+Backend polls Xcode Cloud run status every 15 seconds
+    ↓
+On completion → saves TestFlight link, emits socket event, notifies Slack
 ```
 
 ---
 
 ## ✨ Core Features
 
-1. **Flexible Platform Orchestration**:
-   - **Android**: Supports both debug/release `.apk` bundles and production-ready `.aab` (Android App Bundle) formats.
-   - **iOS**: Supports Ad-Hoc/Enterprise `.ipa` distributions and automated uploads to Apple TestFlight.
-   - **Dual-platform (`both`)**: Trigger concurrent Android and iOS compiles with a single click.
+1. **GitHub Actions Android Builds**
+   - All Android builds (Testing, UAT, Production) are dispatched via GitHub's `workflow_dispatch` API
+   - No self-hosted Mac Mini or build agent required
+   - Supports both `.apk` and `.aab` output formats
+   - Real-time log streaming back to the portal via socket events
 
-2. **Real-time Live Logs Console**:
-   - Live stream log terminal overlay utilizing WebSockets (`Socket.io`) so developers can view compiler feedback line-by-line.
-   - Clean, high-contrast, embedded error diagnostics panel displaying specific build failures.
+2. **Apple Xcode Cloud iOS Builds**
+   - Triggers iOS build runs through the App Store Connect REST API
+   - Polls build status and captures TestFlight distribution links automatically
+   - Supports per-project Apple API credentials (`.p8` key file)
 
-3. **Enterprise Authentication**:
-   - Secure sign-in flows with **GitHub** and **GitLab OAuth 2.0**.
-   - Auto-provisioning of user records and profile avatars during the callback exchange.
+3. **Three Build Profiles**
+   - 🧪 **Testing** — runs on GitHub Actions, fast feedback loop
+   - 📋 **UAT** — runs on GitHub Actions, pre-production validation
+   - 🚀 **Production** — runs on GitHub Actions, production-ready signed binary
 
-4. **Android Keystore Manager**:
-   - Built-in credentials vault for uploading, archiving, and configuring Android `.jks` keystores per project.
+4. **Real-time Live Log Console**
+   - WebSocket (`Socket.io`) live log terminal showing compiler output line-by-line
+   - Build status transitions streamed instantly to all connected clients
 
-5. **Slack Notification Sync**:
-   - Auto-publishes build status summaries (Build Number, Project Name, Platform, Commit ID, Triggered By, and Direct Artifact Links) to Slack channels.
+5. **Enterprise Authentication**
+   - Secure sign-in with **GitHub OAuth 2.0**
+   - User access tokens stored securely and reused for `workflow_dispatch` API calls (no extra PAT needed)
+
+6. **AWS S3 Artifact Storage**
+   - All APK/AAB build artifacts uploaded to S3 by the GitHub Actions runner
+   - Time-limited presigned download URLs generated on demand (24h expiry)
+
+7. **Slack Notifications**
+   - Auto-publishes build summaries (project name, branch, platform, artifact link) on build completion
 
 ---
 
 ## 🛠️ Technology Stack
 
-| Layer | Technologies | Key Modules / Libraries |
+| Layer | Technologies | Key Modules |
 | :--- | :--- | :--- |
-| **Frontend** | React (v18), Vite, Tailwind CSS v4 | Redux Toolkit, React Router, Socket.io-client, Lucide Icons, Satoshi & Cabinet Grotesk Fonts |
-| **Backend** | Node.js, Express, Socket.io | Mongoose (MongoDB ODM), Bull MQ (Redis-backed Queue), AWS SDK v3, Helmet, Rate Limiter |
-| **Agent** | Node.js | ChildProcess (CLI Shell execs), FormData Multi-part Uploader, Axios |
+| **Frontend** | React 18, Vite | Redux Toolkit, Socket.io-client, React Router |
+| **Backend** | Node.js, Express | Mongoose, Bull MQ, AWS SDK v3, Socket.io, Axios |
+| **Android CI** | GitHub Actions | `workflow_dispatch`, `actions/checkout`, `setup-java`, AWS CLI |
+| **iOS CI** | Apple Xcode Cloud | App Store Connect REST API, JWT (ES256) |
+| **Storage** | AWS S3 | `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` |
+| **Queue** | Redis + Bull | Job queue, retry logic, event streaming |
+| **Database** | MongoDB Atlas | Mongoose ODM |
 
 ---
 
@@ -69,180 +125,244 @@ graph TD
 
 ```bash
 buildportal/
-├── backend/                  # Node.js + Express API Server
+├── backend/                          # Node.js + Express API Server
 │   ├── src/
-│   │   ├── config/           # Database configurations
-│   │   ├── controllers/      # Route controllers (Auth, Builds, Repos, Keystore)
-│   │   ├── middleware/       # Auth checking & global error handler
-│   │   ├── models/           # Mongoose schemas (User, Build, Keystore)
-│   │   ├── routes/           # API Endpoints
-│   │   ├── services/         # Bull MQ, Socket.io, S3, & Slack integrations
-│   │   └── server.js         # API Server Entry Point
-│   ├── clearDb.js            # Utility to wipe all database collections
+│   │   ├── config/                   # Database configuration
+│   │   ├── controllers/              # Auth, Builds, Repos, Keystore, Apple Creds
+│   │   ├── middleware/               # Auth guard & global error handler
+│   │   ├── models/                   # Mongoose schemas (User, Build, Keystore)
+│   │   ├── routes/
+│   │   │   ├── agent.js              # /api/agent/* — GHA callback, Mac Mini callback, log stream
+│   │   │   ├── builds.js             # /api/builds/* — trigger, history, cancel
+│   │   │   ├── repos.js              # /api/repos/* — GitHub/GitLab repo & branch listing
+│   │   │   └── auth.js               # /api/auth/* — OAuth flows
+│   │   ├── services/
+│   │   │   ├── buildQueue.js         # Bull MQ processor — routes Android→GHA, iOS→Xcode Cloud
+│   │   │   ├── xcodeCloudService.js  # Apple App Store Connect API integration
+│   │   │   ├── s3Service.js          # S3 upload & presigned URL generation
+│   │   │   └── slackService.js       # Slack webhook notifications
+│   │   └── server.js                 # Express + Socket.io entry point
 │   └── package.json
 │
-├── frontend/                 # Vite + React Single-Page Application (SPA)
+├── frontend/                         # Vite + React SPA
 │   ├── src/
-│   │   ├── assets/           # Vector SVGs and brand assets
-│   │   ├── components/       # Layouts (Sidebar, Header, Main Panel)
-│   │   ├── pages/            # View Pages (Build, History, Keystores, Login)
-│   │   ├── services/         # Socket.io connection helper
-│   │   ├── store/            # Redux Toolkit global store and slices
-│   │   ├── styles/           # Main global style variables
-│   │   └── main.jsx          # SPA entry point
-│   ├── package.json
-│   └── vite.config.js
+│   │   ├── components/               # Sidebar, Header, layout wrappers
+│   │   ├── pages/
+│   │   │   ├── BuildPage.jsx         # Trigger build UI (repo, branch, platform, build type)
+│   │   │   ├── HistoryPage.jsx       # Build history with live log viewer
+│   │   │   ├── KeystorePage.jsx      # Android keystore management
+│   │   │   └── LoginPage.jsx         # GitHub / GitLab OAuth login
+│   │   ├── store/                    # Redux Toolkit slices
+│   │   └── main.jsx                  # SPA entry point
+│   └── package.json
 │
-└── agent/                    # Lightweight Node-based Runner Agent
-    ├── server.js             # HTTP server that runs build shell scripts
-    ├── .env.example
-    └── package.json
+└── agent/
+    └── github-actions-template/
+        └── buildportal-android.yml   # ⬅ Copy this to your repo's .github/workflows/
 ```
 
 ---
 
-## 🔑 Environment Variables Setup
+## 🔑 Environment Variables
 
-### 1. Backend (`backend/.env`)
-Create a `.env` file in the `backend/` directory:
+### Backend (`backend/.env`)
+
 ```env
 PORT=4000
-MONGODB_URI=mongodb://localhost:27017/buildportal
-JWT_SECRET=your_jwt_signature_secret
+NODE_ENV=production
+MONGODB_URI=mongodb+srv://...
 
-# Redis Configuration (For Bull MQ)
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
+# JWT
+JWT_SECRET=your_jwt_secret
+JWT_EXPIRES_IN=7d
 
 # GitHub OAuth
 GITHUB_CLIENT_ID=your_github_client_id
 GITHUB_CLIENT_SECRET=your_github_client_secret
 GITHUB_REDIRECT_URI=http://localhost:4000/api/auth/github/callback
 
-# GitLab OAuth
-GITLAB_CLIENT_ID=your_gitlab_client_id
-GITLAB_CLIENT_SECRET=your_gitlab_client_secret
-GITLAB_REDIRECT_URI=http://localhost:4000/api/auth/gitlab/callback
-
-# S3 Storage Configuration
+# AWS S3
 AWS_ACCESS_KEY_ID=your_aws_access_key
 AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-AWS_REGION=us-east-1
-S3_BUCKET_NAME=your_s3_bucket_name
+AWS_REGION=ap-south-1
+S3_BUCKET_NAME=buildportal-artifacts
 
-# Slack Webhook (Optional)
-SLACK_WEBHOOK_URL=your_slack_webhook_url
+# Redis
+REDIS_URL=redis://localhost:6379
 
-# Security configuration
+# Slack (optional)
+SLACK_BOT_TOKEN=xoxb-your-slack-token
+SLACK_CHANNEL_ID=C0XXXXXXXXX
+
+# GitHub Actions callback secret
+# Must match BP_CALLBACK_SECRET in your GitHub repo secrets
+GITHUB_ACTIONS_CALLBACK_SECRET=your_gha_callback_secret
+
+# Apple Xcode Cloud (iOS builds)
+APPLE_API_KEY_ID=your_key_id
+APPLE_API_ISSUER=your_issuer_id
+APPLE_API_KEY_PATH=/key/AuthKey_XXXXXXXX.p8
+
+# Frontend origin
 FRONTEND_URL=http://localhost:5173
-AGENT_SECRET=your_super_secret_agent_handshake_key
+BACKEND_URL=https://your-backend-url.com
 ```
 
-### 2. Agent (`agent/.env`)
-Create a `.env` file in the `agent/` directory:
-```env
-PORT=5001
-BACKEND_URL=http://localhost:4000
-AGENT_SECRET=your_super_secret_agent_handshake_key
-WORKSPACE=C:/buildportal/agent_workspace
+---
+
+## 🤖 GitHub Actions — One-Time Repo Setup
+
+For every repository you want to build, commit the BuildPortal workflow file **once**:
+
+### Step 1 — Copy the workflow file
+
+Copy [`agent/github-actions-template/buildportal-android.yml`](agent/github-actions-template/buildportal-android.yml) to your repository at:
+
 ```
+your-app-repo/
+└── .github/
+    └── workflows/
+        └── buildportal-android.yml   ← commit this
+```
+
+### Step 2 — Add Repository Secrets
+
+Go to your GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret Name | Description |
+| :--- | :--- |
+| `BP_AWS_ACCESS_KEY_ID` | AWS access key (same as backend) |
+| `BP_AWS_SECRET_ACCESS_KEY` | AWS secret key (same as backend) |
+| `BP_S3_BUCKET_NAME` | S3 bucket name (e.g. `buildportal-artifacts`) |
+| `BP_AWS_REGION` | AWS region (e.g. `ap-south-1`) |
+
+> **Note:** `callback_url` and `callback_secret` are injected automatically by BuildPortal when it dispatches the workflow — you do **not** need to set these manually.
 
 ---
 
 ## 🚀 Setup & Installation
 
-Ensure you have **MongoDB**, **Redis**, and **Node.js** (v18+) installed on your machine.
+### Prerequisites
+- **Node.js** v18+
+- **Redis** (local or [Upstash](https://upstash.com) free tier)
+- **MongoDB** (local or [MongoDB Atlas](https://mongodb.com/atlas) free tier)
+- GitHub OAuth App (for login + `workflow_dispatch`)
+- AWS S3 bucket
 
-### Step 1: Start Redis & MongoDB
-Make sure Redis and MongoDB services are actively running in the background.
+### Step 1 — Start the Backend
 
-### Step 2: Set up the Backend
 ```bash
 cd backend
 npm install
-# Run in development mode (with nodemon)
+npm run dev       # development (nodemon)
+# or
+npm start         # production
+```
+
+Backend runs at `http://localhost:4000`
+
+### Step 2 — Start the Frontend
+
+```bash
+cd frontend
+npm install
 npm run dev
 ```
 
-### Step 3: Set up the Frontend
-```bash
-cd ../frontend
-npm install
-# Start Vite development server
-npm run dev
-```
-Open your browser at `http://localhost:5173`.
+Frontend runs at `http://localhost:5173`
 
-### Step 4: Set up the Build Agent
+### Step 3 — Expose Backend Publicly (for GitHub Actions callbacks)
+
+GitHub Actions needs to POST build results back to your backend. Use a tunnel during development:
+
 ```bash
-cd ../agent
-npm install
-# Start the runner server
-node server.js
+# Option A: ngrok
+ngrok http 4000
+
+# Option B: Cloudflare Tunnel
+cloudflared tunnel --url http://localhost:4000
 ```
+
+Set `BACKEND_URL` in `backend/.env` to the public tunnel URL.
+
+---
+
+## 🌐 API Endpoints
+
+### Build Endpoints
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/builds` | Trigger a new build |
+| `GET` | `/api/builds` | Get build history (paginated, filterable) |
+| `GET` | `/api/builds/:id` | Get single build by ID |
+| `POST` | `/api/builds/:id/cancel` | Cancel a queued/building job |
+
+### Agent / Callback Endpoints
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/agent/github-actions/callback` | GitHub Actions posts build result here |
+| `POST` | `/api/agent/upload` | Upload build artifact (multipart) |
+| `POST` | `/api/agent/log` | Stream a log line from a runner |
+| `GET` | `/api/agent/keystore/:buildId` | Securely stream keystore file |
+
+### Auth Endpoints
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/auth/github` | Initiate GitHub OAuth flow |
+| `GET` | `/api/auth/github/callback` | GitHub OAuth callback |
+| `GET` | `/api/auth/me` | Get authenticated user profile |
+| `POST` | `/api/auth/logout` | Log out and clear session |
 
 ---
 
 ## 🗄️ Database Schemas
 
-### 1. User Schema (`User.js`)
-Stores user profiles synchronized dynamically from GitHub and GitLab OAuth logins.
-```javascript
-{
-  name: { type: String, required: true },
-  username: String,
-  email: String,
-  avatar: String,
-  provider: { type: String, enum: ['github', 'gitlab'], required: true },
-  providerId: { type: String, required: true },
-  accessToken: String,
-  refreshToken: String,
-  gitlabUrl: { type: String, default: 'https://gitlab.com' }
-}
-```
+### Build Schema (`Build.js`)
 
-### 2. Build Schema (`Build.js`)
-Tracks the history, credentials, state, and outputs of build jobs.
 ```javascript
 {
-  userId: { type: ObjectId, ref: 'User', required: true },
-  projectId: { type: String, required: true },
-  projectName: { type: String, required: true },
-  repoUrl: { type: String, required: true },
-  provider: { type: String, enum: ['github', 'gitlab'], required: true },
-  branch: { type: String, required: true },
-  platform: { type: String, enum: ['android', 'ios', 'both'], required: true },
-  androidFormat: { type: String, enum: ['apk', 'aab'], default: 'apk' },
-  buildNumber: Number,
-  status: { type: String, enum: ['queued', 'building', 'success', 'failed', 'cancelled'], default: 'queued' },
-  logs: [{ timestamp: Date, level: String, message: String }],
+  userId:       ObjectId,         // ref → User
+  projectId:    String,           // GitHub repo ID
+  projectName:  String,
+  repoUrl:      String,           // e.g. https://github.com/org/repo
+  provider:     'github' | 'gitlab',
+  branch:       String,
+  platform:     'android' | 'ios' | 'both',
+  androidFormat:'apk' | 'aab',
+  versionName:  String,           // e.g. '1.2.0'
+  buildType:    'testing' | 'uat' | 'production',
+  buildNumber:  Number,
+  status:       'queued' | 'building' | 'success' | 'failed' | 'cancelled',
+  logs:         [{ timestamp, level, message }],
   artifacts: {
-    android: { apkUrl: String, s3Key: String, presignedUrl: String, size: Number },
-    ios: { ipaUrl: String, s3Key: String, presignedUrl: String, testFlightLink: String, size: Number }
+    android: { s3Key, presignedUrl, size },
+    ios:     { s3Key, presignedUrl, testFlightLink, size }
   },
-  startedAt: Date,
-  finishedAt: Date,
-  duration: Number,
-  error: String
+  buildMetadata: { commitSha, commitMessage, appVersion },
+  startedAt:    Date,
+  finishedAt:   Date,
+  duration:     Number,           // seconds
+  error:        String
 }
 ```
 
 ---
 
-## 🧼 Database Maintenance Utility
+## 🧼 Database Maintenance
 
-If you need to completely reset the system's database state for testing or system refreshes, a cleanup utility is available inside the `backend` folder:
+Reset all collections for a clean slate:
 
 ```bash
 cd backend
 node clearDb.js
 ```
-This utility connects to MongoDB, empties the `Build`, `Keystore`, and `User` collections, and gracefully disconnects.
 
 ---
 
-## 🔒 Security Practices
+## 🔒 Security
 
-1. **Handshake Token authentication**: A cryptographically random `AGENT_SECRET` verifies authorization for all commands and file transfer uploads routed from the remote build runner.
-2. **CORS / Secure Headers**: Leverages CORS protection and Express `helmet` to mitigate standard XSS and injection vulnerabilities.
-3. **Session Tokens**: Uses JSON Web Tokens (JWT) signed with a secure server-side secret key to authorize clients using HTTP Bearer protocols.
+1. **GitHub Actions Callback Secret**: `GITHUB_ACTIONS_CALLBACK_SECRET` in `.env` must match `BP_CALLBACK_SECRET` in GitHub repo secrets. All inbound GHA callbacks are rejected if the secret doesn't match.
+2. **OAuth Token Reuse**: The user's stored GitHub OAuth access token is used to call `workflow_dispatch` — no extra Personal Access Token required.
+3. **Presigned S3 URLs**: Build artifacts are never publicly exposed. Download links are time-limited (24h) presigned URLs generated on demand.
+4. **JWT Auth**: All API routes are protected with signed JWTs (`Bearer` scheme).
+5. **Helmet + CORS**: Express hardening via `helmet` and strict CORS origin policies.

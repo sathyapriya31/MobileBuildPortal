@@ -1,11 +1,8 @@
 import { Router } from 'express';
-// ── Mac Mini agent imports (commented out — Android builds now use GitHub Actions) ──
-// import multer from 'multer';
-// import { unlinkSync, mkdirSync } from 'fs';
-// import { join } from 'path';
-// import Keystore from '../models/Keystore.js';
-// import { uploadToS3, getObjectFromS3 } from '../services/s3Service.js';
-// ─────────────────────────────────────────────────────────────────────────────────────
+import multer from 'multer';
+import { unlinkSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { uploadToS3 } from '../services/s3Service.js';
 import Build from '../models/Build.js';
 import { notifySlack } from '../services/slackService.js';
 import { getPresignedUrl } from '../services/s3Service.js';
@@ -17,9 +14,9 @@ const router = Router();
 // ██  MAC MINI AGENT ROUTES  ──  COMMENTED OUT (Android now runs on GitHub Actions)  ██
 // ══════════════════════════════════════════════════════════════════════════════════════
 
-// const uploadDir = join(process.cwd(), 'uploads');
-// try { mkdirSync(uploadDir, { recursive: true }); } catch (e) {}
-// const upload = multer({ dest: 'uploads/' });
+const uploadDir = join(process.cwd(), 'uploads');
+try { mkdirSync(uploadDir, { recursive: true }); } catch (e) {}
+const upload = multer({ dest: 'uploads/' });
 
 // ── GET /api/agent/keystore/:buildId ─────────────────────────────────────────────────
 // Securely streams the Android keystore file to the Mac Mini Agent.
@@ -148,6 +145,56 @@ const router = Router();
 //   res.json({ ok: true });
 // });
 
+/**
+ * POST /api/agent/github-actions/upload
+ *
+ * Receives multipart build artifact from GitHub Actions and uploads to AWS S3 securely.
+ * Secured with GITHUB_ACTIONS_CALLBACK_SECRET.
+ */
+router.post('/github-actions/upload', upload.single('file'), async (req, res) => {
+  const { secret, buildId } = req.body;
+
+  if (secret !== process.env.GITHUB_ACTIONS_CALLBACK_SECRET) {
+    if (req.file) { try { unlinkSync(req.file.path); } catch {} }
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  if (!buildId || !req.file) {
+    if (req.file) { try { unlinkSync(req.file.path); } catch {} }
+    return res.status(400).json({ error: 'Missing required parameters or file' });
+  }
+
+  try {
+    const build = await Build.findById(buildId);
+    if (!build) {
+      try { unlinkSync(req.file.path); } catch {}
+      return res.status(404).json({ error: 'Build not found' });
+    }
+
+    const s3Key = `builds/${buildId}/android/${req.file.originalname}`;
+    const contentType = req.file.originalname.endsWith('.aab') ? 'application/octet-stream' : 'application/vnd.android.package-archive';
+
+    const s3Url = await uploadToS3({ key: s3Key, filePath: req.file.path, contentType });
+    const presignedUrl = await getPresignedUrl(s3Key, 86400);
+
+    build.artifacts.android = {
+      apkUrl: s3Url,
+      s3Key,
+      presignedUrl,
+      size: req.file.size
+    };
+
+    await build.save();
+    try { unlinkSync(req.file.path); } catch {}
+
+    res.json({ success: true, s3Key, presignedUrl });
+  } catch (err) {
+    console.error('Error uploading artifact:', err);
+    if (req.file) { try { unlinkSync(req.file.path); } catch {} }
+    res.status(500).json({ error: `Upload failed: ${err.message}` });
+  }
+});
+
 // ══════════════════════════════════════════════════════════════════════════════════════
 // ██  GITHUB ACTIONS CALLBACK  ──  Active Android build result receiver               ██
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -177,13 +224,18 @@ router.post('/github-actions/callback', async (req, res) => {
   build.buildMetadata = { commitSha: commitSha || '', commitMessage: commitMessage || '' };
 
   // Record the artifact uploaded to S3 by the GitHub Actions runner
-  if (status === 'success' && s3Key) {
-    const presignedUrl = await getPresignedUrl(s3Key, 86400);
-    build.artifacts.android = {
-      s3Key,
-      presignedUrl,
-      size: 0,
-    };
+  if (status === 'success') {
+    if (!build.artifacts.android?.s3Key && s3Key) {
+      const presignedUrl = await getPresignedUrl(s3Key, 86400);
+      build.artifacts.android = {
+        s3Key,
+        presignedUrl,
+        size: 0,
+      };
+    } else if (build.artifacts.android?.s3Key) {
+      const presignedUrl = await getPresignedUrl(build.artifacts.android.s3Key, 86400);
+      build.artifacts.android.presignedUrl = presignedUrl;
+    }
 
     // Slack notification
     if (!build.slackMessageTs) {
