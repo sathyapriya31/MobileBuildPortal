@@ -169,14 +169,15 @@ export default function BuildPage() {
     }
   };
 
-  const needsKeystore = platform === 'android';
+  // Keystore section is now optional — Android builds run on GitHub Actions which uses repo secrets for signing.
+  const needsKeystore = false;
   const needsAppleCreds = platform === 'ios';
 
   return (
     <div style={styles.page} className="page-build">
       <header className="page-header">
         <h1 style={styles.title} className="text-lg md:text-xl">New Build</h1>
-        <p style={styles.subtitle}>Select your project, branch, and platform to trigger a build on the Mac Mini.</p>
+        <p style={styles.subtitle}>Select your project, branch, and platform to trigger a build via <strong>GitHub Actions</strong>.</p>
       </header>
 
       <div className="grid-build">
@@ -303,7 +304,7 @@ export default function BuildPage() {
                   </div>
                   <p style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, marginTop: '10px', lineHeight: '1.5' }}>
                     {buildType === 'testing' && (
-                      <span>🧪 <strong>Testing Profile:</strong> Compiles a testing binary, uploads it to S3, and triggers distribution via Firebase App Distribution (Android) or TestFlight internal testing (iOS).</span>
+                      <span>🧪 <strong>Testing Profile:</strong> Triggers a <strong>GitHub Actions</strong> workflow on your repository. Builds the APK/AAB in the cloud and streams results back in real-time.</span>
                     )}
                     {buildType === 'uat' && (
                       <span>📋 <strong>UAT Profile:</strong> Compiles a UAT-signed binary, uploads it to S3, and flags it ready for User Acceptance Testing environments.</span>

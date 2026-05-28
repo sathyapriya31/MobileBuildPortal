@@ -1,7 +1,7 @@
 import Bull from 'bull';
 import axios from 'axios';
 import Build from '../models/Build.js';
-import Keystore from '../models/Keystore.js';
+// import Keystore from '../models/Keystore.js'; // ← Mac Mini: was used to attach keystore to agent payload. Android now uses GitHub Actions.
 import AppleCredential from '../models/AppleCredential.js';
 import { notifySlack } from './slackService.js';
 import { getPresignedUrl, getObjectFromS3 } from './s3Service.js';
@@ -198,12 +198,12 @@ async function processXcodeCloudBuild(build, io) {
 }
 
 /**
- * Dispatches Android builds to the self-hosted Mac Mini agent
+ * Dispatches ALL Android builds to GitHub Actions via workflow_dispatch API.
+ * Handles testing, UAT, and production build types.
  */
-async function dispatchToAgent(build, io) {
+async function dispatchToGitHubActions(build, io) {
   const buildId = String(build._id);
-  const agentPlatform = build.platform === 'both' ? 'android' : build.platform;
-  
+
   const logCallback = async (level, message) => {
     const freshBuild = await Build.findById(buildId);
     if (freshBuild) {
@@ -214,60 +214,98 @@ async function dispatchToAgent(build, io) {
   };
 
   try {
-    let keystorePayload = null;
-    const ks = await Keystore.findOne({ userId: build.userId._id || build.userId, projectId: build.projectId });
-    if (ks) {
-      keystorePayload = {
-        hasKeystore: true,
-        alias: ks.keystoreAlias,
-        password: ks.keystorePassword,
-        keyPassword: ks.keyPassword,
-        filename: ks.originalFilename,
-        firebaseAppId: ks.firebaseAppId || '',
-        firebaseCliToken: ks.firebaseCliToken || '',
-      };
-      await logCallback('info', `Attached keystore details for project: ${build.projectName}`);
-    } else {
-      await logCallback('info', `No keystore found for project: ${build.projectName}. Build might be unsigned.`);
+    const user = build.userId;
+    if (!user || !user.accessToken) {
+      throw new Error('User GitHub access token is missing. Please re-authenticate.');
     }
 
-    const agentPayload = {
-      buildId,
-      projectId: build.projectId,
-      projectName: build.projectName,
-      repoUrl: build.repoUrl,
-      branch: build.branch,
-      platform: agentPlatform,
-      androidFormat: build.androidFormat || 'apk',
-      versionCode: build.buildNumber,
-      versionName: build.versionName || '1.0.0',
-      buildType: build.buildType || 'testing',
-      provider: build.provider,
-      callbackUrl: `${process.env.BACKEND_URL || 'http://localhost:4000'}/api/agent/callback`,
-      agentSecret: process.env.BUILD_AGENT_SECRET,
-      keystore: keystorePayload,
-    };
+    // Parse owner/repo from the repo URL
+    const { path: repoPath } = parseRepoUrl(build.repoUrl);
+    const [owner, repo] = repoPath.split('/');
+    if (!owner || !repo) {
+      throw new Error(`Could not parse owner/repo from repoUrl: ${build.repoUrl}`);
+    }
 
-    await logCallback('info', 'Connecting to Mac Mini build agent...');
-    await axios.post(
-      `http://${process.env.BUILD_AGENT_HOST}:${process.env.BUILD_AGENT_PORT}/build`,
-      agentPayload,
-      { timeout: 5000 }
-    );
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:4000';
+    const callbackSecret = process.env.GITHUB_ACTIONS_CALLBACK_SECRET;
+    const workflowFile = 'buildportal-android.yml';
 
-    await logCallback('info', 'Android build successfully dispatched to Mac Mini build agent.');
+    await logCallback('info', `🔍 Verifying GitHub Actions workflow file exists: .github/workflows/${workflowFile}`);
+
+    // Check the workflow file exists on the target branch before dispatching
+    try {
+      await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/contents/.github/workflows/${workflowFile}?ref=${encodeURIComponent(build.branch)}`,
+        {
+          headers: {
+            Authorization: `token ${user.accessToken}`,
+            Accept: 'application/vnd.github.v3.raw',
+            'User-Agent': 'BuildPortal',
+          },
+        }
+      );
+      await logCallback('info', `✅ Workflow file found. Dispatching build to GitHub Actions...`);
+    } catch (checkErr) {
+      if (checkErr.response?.status === 404) {
+        throw new Error(
+          `GitHub Actions workflow file not found: .github/workflows/${workflowFile} on branch "${build.branch}". ` +
+          `Please commit this file to your repository. See the BuildPortal docs for the required template.`
+        );
+      }
+      throw new Error(`Failed to verify workflow file: ${checkErr.message}`);
+    }
+
+    // Trigger the workflow via workflow_dispatch
+    try {
+      await axios.post(
+        `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/dispatches`,
+        {
+          ref: build.branch,
+          inputs: {
+            build_id: buildId,
+            version_code: String(build.buildNumber || 1),
+            version_name: build.versionName || '1.0.0',
+            build_type: build.buildType || 'testing',
+            android_format: build.androidFormat || 'apk',
+            callback_url: `${backendUrl}/api/agent/github-actions/callback`,
+            callback_secret: callbackSecret,
+          },
+        },
+        {
+          headers: {
+            Authorization: `token ${user.accessToken}`,
+            Accept: 'application/vnd.github+json',
+            'User-Agent': 'BuildPortal',
+          },
+        }
+      );
+    } catch (dispatchErr) {
+      if (dispatchErr.response?.status === 404) {
+        throw new Error(
+          `GitHub Actions workflow file was found on branch "${build.branch}", but triggering dispatch failed with a 404. ` +
+          `This is a known GitHub limitation: for the workflow_dispatch API to work, the workflow file ` +
+          `(.github/workflows/${workflowFile}) must exist on your repository's default branch (usually "main" or "master"). ` +
+          `Please commit and push the workflow file to your default branch first, then you can run builds on any branch.`
+        );
+      }
+      throw dispatchErr;
+    }
+
+    await logCallback('info', `🚀 GitHub Actions workflow dispatched successfully for ${owner}/${repo} @ ${build.branch}.`);
+    await logCallback('info', `⏳ Waiting for GitHub Actions to run the build and report back...`);
+    await logCallback('info', `🔗 Monitor progress at: https://github.com/${owner}/${repo}/actions`);
   } catch (err) {
-    const errorMsg = `Failed to reach Mac Mini build agent: ${err.message}`;
+    const errorMsg = `GitHub Actions dispatch failed: ${err.message}`;
     await logCallback('error', errorMsg);
-    
-    if (build.platform === 'android') {
-      const freshBuild = await Build.findById(buildId);
+
+    const freshBuild = await Build.findById(buildId);
+    if (freshBuild) {
       freshBuild.status = 'failed';
       freshBuild.error = errorMsg;
       freshBuild.finishedAt = new Date();
       await freshBuild.save();
-      io.to(`build:${buildId}`).emit('build:status', { buildId, status: 'failed', error: errorMsg });
     }
+    io.to(`build:${buildId}`).emit('build:status', { buildId, status: 'failed', error: errorMsg });
   }
 }
 
@@ -285,7 +323,7 @@ export async function setupBuildQueue(io) {
     };
   }
 
-  buildQueue = new Bull('build-queue', redisUrl, queueOptions);
+  buildQueue = new Bull('build-queue-gha', redisUrl, queueOptions);
 
   buildQueue.on('error', (err) => {
     console.error('❌ Build queue redis error:', err.message);
@@ -303,13 +341,15 @@ export async function setupBuildQueue(io) {
 
     try {
       if (build.platform === 'android') {
-        await dispatchToAgent(build, io);
+        // ✅ All Android builds → GitHub Actions (testing / UAT / production)
+        await dispatchToGitHubActions(build, io);
       } else if (build.platform === 'ios') {
         await processXcodeCloudBuild(build, io);
       } else if (build.platform === 'both') {
+        // All Android → GitHub Actions; iOS → Xcode Cloud
         await Promise.all([
-          dispatchToAgent(build, io),
-          processXcodeCloudBuild(build, io)
+          dispatchToGitHubActions(build, io),
+          processXcodeCloudBuild(build, io),
         ]);
       }
     } catch (err) {

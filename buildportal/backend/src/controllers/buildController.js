@@ -12,11 +12,8 @@ export async function triggerBuild(req, res) {
     throw new AppError('Missing required build parameters', 400);
   }
 
-  // Check keystore for android
-  if ((platform === 'android' || platform === 'both')) {
-    const ks = await Keystore.findOne({ userId: req.user._id, projectId });
-    if (!ks) throw new AppError('No keystore found for this project. Please upload a keystore first.', 400);
-  }
+  // Keystore is optional when using GitHub Actions — GHA workflows handle signing via repo secrets.
+  // We still look it up so the agent/GHA dispatcher can attach it if available.
 
   const build = await Build.create({
     userId: req.user._id,
