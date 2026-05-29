@@ -219,9 +219,14 @@ export default function HistoryPage() {
                     <td style={styles.td}>{dateStr}</td>
                     <td style={styles.td}>
                       <div style={styles.artifactCell}>
-                        {hasAndroid && (
-                          <a href={build.artifacts.android.presignedUrl} target="_blank" rel="noopener noreferrer" style={{ ...styles.actionBtn, ...styles.downloadBtn }}>
+                        {build.artifacts?.android?.presignedUrl && (
+                          <a href={build.artifacts.android.presignedUrl} target="_blank" rel="noopener noreferrer" style={{ ...styles.actionBtn, ...styles.downloadBtn, marginBottom: build.artifacts.android.aabPresignedUrl ? '4px' : '0' }}>
                             ⬇ {build.artifacts.android.fileName?.endsWith('.aab') ? 'AAB' : 'APK'}
+                          </a>
+                        )}
+                        {build.artifacts?.android?.aabPresignedUrl && (
+                          <a href={build.artifacts.android.aabPresignedUrl} target="_blank" rel="noopener noreferrer" style={{ ...styles.actionBtn, ...styles.downloadBtn, borderColor: '#76DC00', color: '#76DC00', background: 'rgba(118,220,0,0.08)' }}>
+                            ⬇ AAB (Play Store)
                           </a>
                         )}
                         {build.artifacts?.ios?.testFlightLink && (
@@ -234,7 +239,7 @@ export default function HistoryPage() {
                             ⬇ IPA
                           </a>
                         )}
-                        {!hasAndroid && !hasIos && <span style={{ color: Colors.textFaint }}>-</span>}
+                        {!build.artifacts?.android?.presignedUrl && !build.artifacts?.android?.aabPresignedUrl && !hasIos && <span style={{ color: Colors.textFaint }}>-</span>}
                       </div>
                     </td>
                     <td style={{ ...styles.td, textAlign: 'center' }}>

@@ -172,17 +172,27 @@ router.post('/github-actions/upload', upload.single('file'), async (req, res) =>
     }
 
     const s3Key = `builds/${buildId}/android/${req.file.originalname}`;
-    const contentType = req.file.originalname.endsWith('.aab') ? 'application/octet-stream' : 'application/vnd.android.package-archive';
+    const isAab = req.file.originalname.endsWith('.aab');
+    const contentType = isAab ? 'application/octet-stream' : 'application/vnd.android.package-archive';
 
     const s3Url = await uploadToS3({ key: s3Key, filePath: req.file.path, contentType });
     const presignedUrl = await getPresignedUrl(s3Key, 86400);
 
-    build.artifacts.android = {
-      apkUrl: s3Url,
-      s3Key,
-      presignedUrl,
-      size: req.file.size
-    };
+    if (!build.artifacts.android) {
+      build.artifacts.android = {};
+    }
+
+    if (isAab) {
+      build.artifacts.android.aabUrl = s3Url;
+      build.artifacts.android.aabS3Key = s3Key;
+      build.artifacts.android.aabPresignedUrl = presignedUrl;
+      build.artifacts.android.aabSize = req.file.size;
+    } else {
+      build.artifacts.android.apkUrl = s3Url;
+      build.artifacts.android.s3Key = s3Key;
+      build.artifacts.android.presignedUrl = presignedUrl;
+      build.artifacts.android.size = req.file.size;
+    }
 
     await build.save();
     try { unlinkSync(req.file.path); } catch {}
@@ -225,27 +235,36 @@ router.post('/github-actions/callback', async (req, res) => {
 
   // Record the artifact uploaded to S3 by the GitHub Actions runner
   if (status === 'success') {
-    if (!build.artifacts.android?.s3Key && s3Key) {
+    let slackS3Link = '';
+    
+    if (build.artifacts.android) {
+      if (build.artifacts.android.s3Key) {
+        build.artifacts.android.presignedUrl = await getPresignedUrl(build.artifacts.android.s3Key, 86400);
+        slackS3Link = build.artifacts.android.presignedUrl;
+      }
+      if (build.artifacts.android.aabS3Key) {
+        build.artifacts.android.aabPresignedUrl = await getPresignedUrl(build.artifacts.android.aabS3Key, 86400);
+        if (!slackS3Link) slackS3Link = build.artifacts.android.aabPresignedUrl;
+      }
+    } else if (s3Key) {
       const presignedUrl = await getPresignedUrl(s3Key, 86400);
       build.artifacts.android = {
         s3Key,
         presignedUrl,
         size: 0,
       };
-    } else if (build.artifacts.android?.s3Key) {
-      const presignedUrl = await getPresignedUrl(build.artifacts.android.s3Key, 86400);
-      build.artifacts.android.presignedUrl = presignedUrl;
+      slackS3Link = presignedUrl;
     }
 
     // Slack notification
-    if (!build.slackMessageTs) {
+    if (!build.slackMessageTs && slackS3Link) {
       try {
         const ts = await notifySlack({
           buildId,
           projectName: build.projectName,
           branch: build.branch,
           platform: build.platform,
-          s3Link: presignedUrl,
+          s3Link: slackS3Link,
         });
         build.slackMessageTs = ts;
       } catch (slackErr) {

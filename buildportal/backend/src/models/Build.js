@@ -12,6 +12,7 @@ const buildSchema = new mongoose.Schema({
   versionName: { type: String, default: '1.0.0' },
   buildType: { type: String, enum: ['testing', 'uat', 'production'], default: 'testing' },
   buildNumber: Number,
+  releaseNotes: { type: String, default: '' },
   status: {
     type: String,
     enum: ['queued', 'building', 'success', 'failed', 'cancelled'],
@@ -19,7 +20,16 @@ const buildSchema = new mongoose.Schema({
   },
   logs: [{ timestamp: Date, level: { type: String, default: 'info' }, message: String }],
   artifacts: {
-    android: { apkUrl: String, s3Key: String, presignedUrl: String, size: Number },
+    android: { 
+      apkUrl: String, 
+      s3Key: String, 
+      presignedUrl: String, 
+      size: Number,
+      aabUrl: String,
+      aabS3Key: String,
+      aabPresignedUrl: String,
+      aabSize: Number
+    },
     ios: { ipaUrl: String, s3Key: String, presignedUrl: String, testFlightLink: String, size: Number },
   },
   slackMessageTs: String,

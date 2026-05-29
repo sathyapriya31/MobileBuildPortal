@@ -267,6 +267,7 @@ async function dispatchToGitHubActions(build, io) {
             version_name: build.versionName || '1.0.0',
             build_type: build.buildType || 'testing',
             android_format: build.androidFormat || 'apk',
+            release_notes: build.releaseNotes || 'Initial UAT Release',
             callback_url: `${backendUrl}/api/agent/github-actions/callback`,
             callback_secret: callbackSecret,
           },
