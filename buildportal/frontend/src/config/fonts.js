@@ -1,33 +1,53 @@
 const Fonts = {
   Regular: {
-    fontFamily: 'PlusJakartaSans-Regular',
+    fontFamily: 'Google Sans',
+    fontWeight: '400',
+    fontStyle: 'normal',
   },
   Medium: {
-    fontFamily: 'PlusJakartaSans-Medium',
+    fontFamily: 'Google Sans',
+    fontWeight: '500',
+    fontStyle: 'normal',
   },
   SemiBold: {
-    fontFamily: 'PlusJakartaSans-SemiBold',
+    fontFamily: 'Google Sans',
+    fontWeight: '600',
+    fontStyle: 'normal',
   },
   Bold: {
-    fontFamily: 'PlusJakartaSans-Bold',
+    fontFamily: 'Google Sans',
+    fontWeight: '700',
+    fontStyle: 'normal',
   },
   ExtraBold: {
-    fontFamily: 'PlusJakartaSans-ExtraBold',
+    fontFamily: 'Google Sans',
+    fontWeight: '700', // Fallback to 700
+    fontStyle: 'normal',
   },
   Italic: {
-    fontFamily: 'PlusJakartaSans-Italic',
+    fontFamily: 'Google Sans',
+    fontWeight: '400',
+    fontStyle: 'italic',
   },
   MediumItalic: {
-    fontFamily: 'PlusJakartaSans-MediumItalic',
+    fontFamily: 'Google Sans',
+    fontWeight: '500',
+    fontStyle: 'italic',
   },
   SemiBoldItalic: {
-    fontFamily: 'PlusJakartaSans-SemiBoldItalic',
+    fontFamily: 'Google Sans',
+    fontWeight: '600',
+    fontStyle: 'italic',
   },
   BoldItalic: {
-    fontFamily: 'PlusJakartaSans-BoldItalic',
+    fontFamily: 'Google Sans',
+    fontWeight: '700',
+    fontStyle: 'italic',
   },
   ExtraBoldItalic: {
-    fontFamily: 'PlusJakartaSans-ExtraBoldItalic',
+    fontFamily: 'Google Sans',
+    fontWeight: '700', // Fallback to 700
+    fontStyle: 'italic',
   },
 };
 
