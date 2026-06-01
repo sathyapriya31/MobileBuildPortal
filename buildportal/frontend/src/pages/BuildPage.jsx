@@ -43,6 +43,7 @@ export default function BuildPage() {
   const [uploadingKS, setUploadingKS] = useState(false);
   const [keystoreMode, setKeystoreMode] = useState('upload'); // 'upload' or 'generate'
   const [versionName, setVersionName] = useState('1.0.0');
+  const [versionCode, setVersionCode] = useState('');
   const [buildType, setBuildType] = useState('testing');
   const [appleKeyFile, setAppleKeyFile] = useState(null);
   const [appleKeyId, setAppleKeyId] = useState('');
@@ -160,6 +161,7 @@ export default function BuildPage() {
       platform,
       androidFormat: (platform === 'android' || platform === 'both') ? androidFormat : undefined,
       versionName,
+      buildNumber: versionCode ? parseInt(versionCode) : undefined,
       buildType,
     }));
     if (triggerBuild.fulfilled.match(result)) {
@@ -315,31 +317,60 @@ export default function BuildPage() {
                   </p>
                 </div>
 
-                <div style={{ marginTop: '8px' }}>
-                  <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Version Name</label>
-                  <input
-                    type="text"
-                    value={versionName}
-                    onChange={(e) => setVersionName(e.target.value)}
-                    placeholder="e.g. 1.0.0"
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      border: `1px solid ${Colors.border || '#333'}`,
-                      borderRadius: 'var(--radius-md)',
-                      background: Colors.surface2 || '#111',
-                      color: Colors.text,
-                      fontSize: 'var(--text-sm)',
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                      transition: 'border-color var(--transition)'
-                    }}
-                    onFocus={(e) => e.target.style.borderColor = Colors.primary}
-                    onBlur={(e) => e.target.style.borderColor = Colors.border || '#333'}
-                  />
-                  <p style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, marginTop: '6px' }}>
-                    The user-facing version of the app displayed in the Google Play Store (e.g. 1.0.0).
-                  </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '12px' }}>
+                  <div>
+                    <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Version Name</label>
+                    <input
+                      type="text"
+                      value={versionName}
+                      onChange={(e) => setVersionName(e.target.value)}
+                      placeholder="e.g. 1.0.0"
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        border: `1px solid ${Colors.border || '#333'}`,
+                        borderRadius: 'var(--radius-md)',
+                        background: Colors.surface2 || '#111',
+                        color: Colors.text,
+                        fontSize: 'var(--text-sm)',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                        transition: 'border-color var(--transition)'
+                      }}
+                      onFocus={(e) => e.target.style.borderColor = Colors.primary}
+                      onBlur={(e) => e.target.style.borderColor = Colors.border || '#333'}
+                    />
+                    <p style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, marginTop: '6px' }}>
+                      User-facing version on store (e.g. 1.0.0).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Version Code (Optional)</label>
+                    <input
+                      type="number"
+                      value={versionCode}
+                      onChange={(e) => setVersionCode(e.target.value)}
+                      placeholder="Auto-incremented"
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        border: `1px solid ${Colors.border || '#333'}`,
+                        borderRadius: 'var(--radius-md)',
+                        background: Colors.surface2 || '#111',
+                        color: Colors.text,
+                        fontSize: 'var(--text-sm)',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                        transition: 'border-color var(--transition)'
+                      }}
+                      onFocus={(e) => e.target.style.borderColor = Colors.primary}
+                      onBlur={(e) => e.target.style.borderColor = Colors.border || '#333'}
+                    />
+                    <p style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, marginTop: '6px' }}>
+                      Integer version code. Leave blank to auto-increment sequentially.
+                    </p>
+                  </div>
                 </div>
               </div>
             </section>
