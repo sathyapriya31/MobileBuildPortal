@@ -44,6 +44,7 @@ export default function BuildPage() {
   const [keystoreMode, setKeystoreMode] = useState('upload'); // 'upload' or 'generate'
   const [versionName, setVersionName] = useState('1.0.0');
   const [buildType, setBuildType] = useState('testing');
+  const [releaseNotes, setReleaseNotes] = useState('Initial UAT Release');
   const [appleKeyFile, setAppleKeyFile] = useState(null);
   const [appleKeyId, setAppleKeyId] = useState('');
   const [appleIssuerId, setAppleIssuerId] = useState('');
@@ -72,6 +73,12 @@ export default function BuildPage() {
   useEffect(() => {
     if (branches.length) setBranch(branches[0].name);
   }, [branches]);
+
+  useEffect(() => {
+    if ((buildType === 'uat' || buildType === 'production') && (platform === 'android' || platform === 'both')) {
+      setAndroidFormat('aab');
+    }
+  }, [buildType, platform]);
 
   const handleRepoSelect = (repo) => {
     dispatch(selectRepo(repo));
@@ -161,6 +168,7 @@ export default function BuildPage() {
       androidFormat: (platform === 'android' || platform === 'both') ? androidFormat : undefined,
       versionName,
       buildType,
+      releaseNotes: buildType === 'uat' ? releaseNotes : undefined,
     }));
     if (triggerBuild.fulfilled.match(result)) {
       toast.success('Build queued! 🚀');
@@ -244,8 +252,15 @@ export default function BuildPage() {
                     style={{
                       ...styles.formatBtn,
                       ...(androidFormat === 'apk' ? styles.formatActive : {}),
+                      ...((buildType === 'uat' || buildType === 'production') ? { opacity: 0.5, cursor: 'not-allowed' } : {})
                     }}
-                    onClick={() => setAndroidFormat('apk')}
+                    onClick={() => {
+                      if (buildType === 'uat' || buildType === 'production') {
+                        toast.error('Google Play uploads require App Bundle (.aab) format.');
+                        return;
+                      }
+                      setAndroidFormat('apk');
+                    }}
                   >
                     📦 APK (Package)
                   </button>
@@ -259,6 +274,11 @@ export default function BuildPage() {
                     🎁 AAB (App Bundle)
                   </button>
                 </div>
+                {(buildType === 'uat' || buildType === 'production') && (
+                  <div style={{ marginTop: '8px', fontSize: 'var(--text-xs)', color: Colors.warning, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    ⚠️ Google Play upload requires App Bundle (.aab) format. Locked to AAB.
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -307,13 +327,38 @@ export default function BuildPage() {
                       <span>🧪 <strong>Testing Profile:</strong> Triggers a <strong>GitHub Actions</strong> workflow on your repository. Builds the APK/AAB in the cloud and streams results back in real-time.</span>
                     )}
                     {buildType === 'uat' && (
-                      <span>📋 <strong>UAT Profile:</strong> Compiles a UAT-signed binary, uploads it to S3, and flags it ready for User Acceptance Testing environments.</span>
+                      <span>📋 <strong>UAT Profile:</strong> Compiles a UAT-signed binary, uploads it to S3, and deploys to the Google Play Store under <strong>Testing &gt; Internal testing</strong>.</span>
                     )}
                     {buildType === 'production' && (
                       <span>🚀 <strong>Production Profile:</strong> Compiles a production-ready signed binary and hosts it on AWS S3 for final deployment.</span>
                     )}
                   </p>
                 </div>
+
+                {buildType === 'uat' && (
+                  <div style={{ borderTop: `1px solid ${Colors.border}`, paddingTop: '16px', animation: 'fadeIn 0.3s ease' }}>
+                    <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Play Store Release Notes</label>
+                    <textarea
+                      style={{
+                        width: '100%',
+                        minHeight: '80px',
+                        padding: '10px',
+                        background: Colors.surface2,
+                        border: `1px solid ${Colors.border}`,
+                        borderRadius: 'var(--radius-md)',
+                        color: Colors.text,
+                        fontSize: 'var(--text-sm)',
+                        fontFamily: 'inherit',
+                        resize: 'vertical',
+                        outline: 'none',
+                        transition: 'border-color var(--transition)'
+                      }}
+                      placeholder="Enter release notes for this UAT build (e.g., Bug fixes and performance improvements...)"
+                      value={releaseNotes}
+                      onChange={(e) => setReleaseNotes(e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
             </section>
           )}

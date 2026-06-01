@@ -8,6 +8,9 @@ import { notifySlack } from '../services/slackService.js';
 import { getPresignedUrl } from '../services/s3Service.js';
 import { io } from '../server.js';
 
+import Keystore from '../models/Keystore.js';
+import { getObjectFromS3 } from '../services/s3Service.js';
+
 const router = Router();
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -19,29 +22,29 @@ try { mkdirSync(uploadDir, { recursive: true }); } catch (e) {}
 const upload = multer({ dest: 'uploads/' });
 
 // ── GET /api/agent/keystore/:buildId ─────────────────────────────────────────────────
-// Securely streams the Android keystore file to the Mac Mini Agent.
-// No longer needed — GitHub Actions uses its own repo secrets for signing.
+// Securely streams the Android keystore file to the GitHub Actions runner.
+// Also supports the GHA constructed path suffix: /github-actions/callback/keystore/:buildId
 // ─────────────────────────────────────────────────────────────────────────────────────
-// router.get('/keystore/:buildId', async (req, res) => {
-//   const { secret } = req.query;
-//   const { buildId } = req.params;
-//   if (secret !== process.env.BUILD_AGENT_SECRET) {
-//     return res.status(403).json({ error: 'Forbidden' });
-//   }
-//   try {
-//     const build = await Build.findById(buildId);
-//     if (!build) return res.status(404).json({ error: 'Build not found' });
-//     const ks = await Keystore.findOne({ userId: build.userId, projectId: build.projectId });
-//     if (!ks) return res.status(404).json({ error: 'Keystore not found' });
-//     const s3Stream = await getObjectFromS3(ks.keystoreS3Key);
-//     res.setHeader('Content-Type', 'application/octet-stream');
-//     res.setHeader('Content-Disposition', `attachment; filename="${ks.originalFilename}"`);
-//     s3Stream.pipe(res);
-//   } catch (err) {
-//     console.error('Error streaming keystore:', err);
-//     res.status(500).json({ error: `Failed to stream keystore: ${err.message}` });
-//   }
-// });
+router.get(['/keystore/:buildId', '/github-actions/callback/keystore/:buildId'], async (req, res) => {
+  const { secret } = req.query;
+  const { buildId } = req.params;
+  if (secret !== process.env.GITHUB_ACTIONS_CALLBACK_SECRET && secret !== process.env.BUILD_AGENT_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  try {
+    const build = await Build.findById(buildId);
+    if (!build) return res.status(404).json({ error: 'Build not found' });
+    const ks = await Keystore.findOne({ userId: build.userId, projectId: build.projectId });
+    if (!ks) return res.status(404).json({ error: 'Keystore not found' });
+    const s3Stream = await getObjectFromS3(ks.keystoreS3Key);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${ks.originalFilename || 'release.keystore'}"`);
+    s3Stream.pipe(res);
+  } catch (err) {
+    console.error('Error streaming keystore:', err);
+    res.status(500).json({ error: `Failed to stream keystore: ${err.message}` });
+  }
+});
 
 // ── POST /api/agent/upload ────────────────────────────────────────────────────────────
 // Receives a multipart APK/IPA upload from the Mac Mini Agent and stores it in S3.
@@ -218,7 +221,7 @@ router.post('/github-actions/upload', upload.single('file'), async (req, res) =>
  * Body: { secret, buildId, status, s3Key, commitSha, commitMessage, error }
  */
 router.post('/github-actions/callback', async (req, res) => {
-  const { secret, buildId, status, error, commitSha, commitMessage, s3Key } = req.body;
+  const { secret, buildId, status, error, commitSha, commitMessage, s3Key, buildNumber } = req.body;
 
   if (secret !== process.env.GITHUB_ACTIONS_CALLBACK_SECRET) {
     return res.status(403).json({ error: 'Forbidden' });
@@ -232,6 +235,10 @@ router.post('/github-actions/callback', async (req, res) => {
   build.duration = build.startedAt ? Math.floor((new Date() - build.startedAt) / 1000) : 0;
   build.error = error || null;
   build.buildMetadata = { commitSha: commitSha || '', commitMessage: commitMessage || '' };
+  
+  if (buildNumber) {
+    build.buildNumber = Number(buildNumber);
+  }
 
   // Record the artifact uploaded to S3 by the GitHub Actions runner
   if (status === 'success') {

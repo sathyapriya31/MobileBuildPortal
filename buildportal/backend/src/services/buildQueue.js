@@ -1,7 +1,7 @@
 import Bull from 'bull';
 import axios from 'axios';
 import Build from '../models/Build.js';
-// import Keystore from '../models/Keystore.js'; // ← Mac Mini: was used to attach keystore to agent payload. Android now uses GitHub Actions.
+import Keystore from '../models/Keystore.js';
 import AppleCredential from '../models/AppleCredential.js';
 import { notifySlack } from './slackService.js';
 import { getPresignedUrl, getObjectFromS3 } from './s3Service.js';
@@ -255,6 +255,30 @@ async function dispatchToGitHubActions(build, io) {
       throw new Error(`Failed to verify workflow file: ${checkErr.message}`);
     }
 
+    // Fetch project keystore details if they exist
+    let keystoreInput = {
+      keystore_exists: 'false',
+      keystore_filename: '',
+      keystore_alias: '',
+      keystore_password: '',
+      keystore_key_password: '',
+    };
+    try {
+      const keystore = await Keystore.findOne({ userId: build.userId._id || build.userId, projectId: build.projectId });
+      if (keystore) {
+        await logCallback('info', `Attached keystore details for project: ${build.projectName}`);
+        keystoreInput = {
+          keystore_exists: 'true',
+          keystore_filename: keystore.originalFilename || 'release.keystore',
+          keystore_alias: keystore.keystoreAlias || '',
+          keystore_password: keystore.keystorePassword || '',
+          keystore_key_password: keystore.keyPassword || '',
+        };
+      }
+    } catch (ksErr) {
+      await logCallback('warn', `Failed to fetch keystore details: ${ksErr.message}`);
+    }
+
     // Trigger the workflow via workflow_dispatch
     try {
       await axios.post(
@@ -270,6 +294,7 @@ async function dispatchToGitHubActions(build, io) {
             release_notes: build.releaseNotes || 'Initial UAT Release',
             callback_url: `${backendUrl}/api/agent/github-actions/callback`,
             callback_secret: callbackSecret,
+            ...keystoreInput,
           },
         },
         {
@@ -324,7 +349,7 @@ export async function setupBuildQueue(io) {
     };
   }
 
-  buildQueue = new Bull('build-queue-gha', redisUrl, queueOptions);
+  buildQueue = new Bull('build-queue-gha-antigravity-v2', redisUrl, queueOptions);
 
   buildQueue.on('error', (err) => {
     console.error('❌ Build queue redis error:', err.message);

@@ -1,0 +1,422 @@
+##############################################################################
+# BuildPortal — Android Build Workflow
+#
+# INSTRUCTIONS:
+#   1. Copy this file to your repository at:
+#      .github/workflows/buildportal-android.yml
+#   2. Add the following Repository Secrets in GitHub → Settings → Secrets:
+#      - BP_AWS_ACCESS_KEY_ID      : Your AWS S3 access key
+#      - BP_AWS_SECRET_ACCESS_KEY  : Your AWS S3 secret key
+#      - BP_S3_BUCKET_NAME         : Your S3 bucket name (e.g. buildportal-artifacts)
+#      - BP_AWS_REGION             : Your S3 region (e.g. ap-south-1)
+#      - BP_PLAY_SERVICE_ACCOUNT_JSON : Your Google Play service account JSON key (for UAT uploads)
+#
+#   The callback_url and callback_secret inputs are injected automatically
+#   by BuildPortal when it dispatches the workflow — do not set them manually.
+##############################################################################
+
+name: BuildPortal Android Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'BuildPortal internal build ID'
+        required: true
+        type: string
+      version_code:
+        description: 'Android version code (integer)'
+        required: false
+        default: '1'
+        type: string
+      version_name:
+        description: 'Android version name (e.g. 1.0.0)'
+        required: false
+        default: '1.0.0'
+        type: string
+      build_type:
+        description: 'Build type: testing | uat | production'
+        required: false
+        default: 'testing'
+        type: string
+      android_format:
+        description: 'Output format: apk | aab'
+        required: false
+        default: 'apk'
+        type: string
+      release_notes:
+        description: 'Release notes for Google Play Store upload'
+        required: false
+        default: 'Initial UAT Release'
+        type: string
+      callback_url:
+        description: 'BuildPortal backend callback URL'
+        required: true
+        type: string
+      callback_secret:
+        description: 'Secret to authenticate the callback'
+        required: true
+        type: string
+      keystore_exists:
+        description: 'Whether a keystore is configured'
+        required: false
+        default: 'false'
+        type: string
+      keystore_filename:
+        description: 'Keystore filename'
+        required: false
+        type: string
+      keystore_alias:
+        description: 'Keystore alias'
+        required: false
+        type: string
+      keystore_password:
+        description: 'Keystore password'
+        required: false
+        type: string
+      keystore_key_password:
+        description: 'Key password'
+        required: false
+        type: string
+
+jobs:
+  build-android:
+    name: Build Android (${{ inputs.android_format }})
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Java (required by Gradle) ─────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ── 3. Install Node.js (for React Native / Expo projects) ────────────
+      - name: Set up Node.js (with npm cache)
+        if: hashFiles('package.json') != '' && hashFiles('package-lock.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Set up Node.js (with yarn cache)
+        if: hashFiles('package.json') != '' && hashFiles('yarn.lock') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+
+      - name: Set up Node.js (with pnpm cache)
+        if: hashFiles('package.json') != '' && hashFiles('pnpm-lock.yaml') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Set up Node.js (no cache)
+        if: hashFiles('package.json') != '' && hashFiles('package-lock.json') == '' && hashFiles('yarn.lock') == '' && hashFiles('pnpm-lock.yaml') == ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # ── 4. Install JavaScript dependencies ───────────────────────────────
+      - name: Install JS dependencies
+        if: hashFiles('package.json') != ''
+        run: |
+          if [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+          elif [ -f pnpm-lock.yaml ]; then
+            npm install -g pnpm && pnpm install --frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci || (echo "⚠️ npm ci failed, falling back to npm install..." && npm install --legacy-peer-deps --no-audit --no-fund)
+          else
+            npm install --legacy-peer-deps --no-audit --no-fund
+          fi
+
+      # ── 5. Make gradlew executable ───────────────────────────────────────
+      - name: Make gradlew executable
+        run: |
+          if [ -f android/gradlew ]; then
+            chmod +x android/gradlew
+          elif [ -f gradlew ]; then
+            chmod +x gradlew
+          fi
+
+      # ── 6. Extract Package Name ─────────────────────────────────────────
+      - name: Extract Package Name
+        id: package_info
+        run: |
+          GRADLE_FILE="android/app/build.gradle"
+          if [ ! -f "$GRADLE_FILE" ]; then
+            GRADLE_FILE="app/build.gradle"
+          fi
+          if [ -f "$GRADLE_FILE" ]; then
+            PACKAGE_NAME=$(grep -o "applicationId\s*['\"][^'\"]*['\"]" "$GRADLE_FILE" | head -n 1 | sed -E "s/applicationId\s*['\"]([^'\"]*)['\"]/\1/")
+            if [ -z "$PACKAGE_NAME" ]; then
+              PACKAGE_NAME=$(grep -o "applicationId\s*=\s*['\"][^'\"]*['\"]" "$GRADLE_FILE" | head -n 1 | sed -E "s/applicationId\s*=\s*['\"]([^'\"]*)['\"]/\1/")
+            fi
+          fi
+          if [ -z "$PACKAGE_NAME" ]; then
+            PACKAGE_NAME="${{ secrets.ANDROID_PACKAGE_NAME }}"
+          fi
+          echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "Detected Package Name: $PACKAGE_NAME"
+
+      # ── 7. Query Google Play Console for Highest Version Code ───────────
+      - name: Fetch Max Google Play Version Code
+        id: play_version
+        run: |
+          if [ -z "$SERVICE_ACCOUNT_JSON" ] || [ -z "$PACKAGE_NAME" ]; then
+            echo "Skipping Play Store version check: service account secret or package name not available."
+            echo "resolved_version_code=${{ inputs.version_code }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Installing Google Play API client on-the-fly..."
+            npm install googleapis --no-save
+            echo 'const { google } = require("googleapis");
+            const fs = require("fs");
+            async function run() {
+              const serviceAccountJson = process.env.SERVICE_ACCOUNT_JSON;
+              const packageName = process.env.PACKAGE_NAME;
+              const dispatchedVersionCode = parseInt(process.env.DISPATCHED_VERSION_CODE, 10) || 1;
+              try {
+                const credentials = JSON.parse(serviceAccountJson);
+                const auth = new google.auth.JWT({
+                  email: credentials.client_email,
+                  key: credentials.private_key,
+                  scopes: ["https://www.googleapis.com/auth/androidpublisher"]
+                });
+                await auth.authorize();
+                const androidpublisher = google.androidpublisher({ version: "v3", auth });
+                const edit = await androidpublisher.edits.insert({ packageName });
+                const editId = edit.data.id;
+                const tracksList = ["internal", "alpha", "beta", "production"];
+                let maxVersionCode = 0;
+                for (const trackName of tracksList) {
+                  try {
+                    const track = await androidpublisher.edits.tracks.get({ packageName, editId, track: trackName });
+                    if (track.data && track.data.releases) {
+                      for (const release of track.data.releases) {
+                        if (release.versionCodes) {
+                          for (const code of release.versionCodes) {
+                            const numCode = parseInt(code, 10);
+                            if (numCode > maxVersionCode) maxVersionCode = numCode;
+                          }
+                        }
+                      }
+                    }
+                  } catch (tErr) {}
+                }
+                try { await androidpublisher.edits.delete({ packageName, editId }); } catch (e) {}
+                console.log("Max version code on Google Play Console: " + maxVersionCode);
+                const resolvedVersionCode = Math.max(dispatchedVersionCode, maxVersionCode + 1);
+                console.log("Resolved version code: " + resolvedVersionCode);
+                fs.appendFileSync(process.env.GITHUB_OUTPUT, "resolved_version_code=" + resolvedVersionCode + "\n");
+              } catch (err) {
+                console.error("Error fetching version code from Play Console:", err.message);
+                fs.appendFileSync(process.env.GITHUB_OUTPUT, "resolved_version_code=" + dispatchedVersionCode + "\n");
+              }
+            }
+            run();' > get_version.js
+            node get_version.js
+          fi
+        env:
+          SERVICE_ACCOUNT_JSON: ${{ secrets.BP_PLAY_SERVICE_ACCOUNT_JSON }}
+          PACKAGE_NAME: ${{ steps.package_info.outputs.package_name }}
+          DISPATCHED_VERSION_CODE: ${{ inputs.version_code }}
+
+      # ── 8. Set version code and version name ────────────────────────────
+      - name: Set version in build.gradle
+        run: |
+          GRADLE_FILE="android/app/build.gradle"
+          if [ ! -f "$GRADLE_FILE" ]; then
+            GRADLE_FILE="app/build.gradle"
+          fi
+          
+          RESOLVED_CODE="${{ steps.play_version.outputs.resolved_version_code }}"
+          if [ -z "$RESOLVED_CODE" ]; then
+            RESOLVED_CODE="${{ inputs.version_code }}"
+          fi
+          
+          echo "RESOLVED_CODE=$RESOLVED_CODE" >> "$GITHUB_ENV"
+          
+          if [ -f "$GRADLE_FILE" ]; then
+            sed -i "s/versionCode [0-9]*/versionCode $RESOLVED_CODE/" "$GRADLE_FILE"
+            sed -i "s/versionName \"[^\"]*\"/versionName \"${{ inputs.version_name }}\"/" "$GRADLE_FILE"
+            echo "Updated versionCode=$RESOLVED_CODE versionName=${{ inputs.version_name }} in $GRADLE_FILE"
+          fi
+
+      # ── 6.5 Download Android Keystore file securely ─────────────────────
+      - name: Download Keystore
+        if: ${{ inputs.keystore_exists == 'true' }}
+        run: |
+          if [ -d android/app ]; then
+            TARGET_DIR="android/app"
+          elif [ -d app ]; then
+            TARGET_DIR="app"
+          elif [ -d android ]; then
+            TARGET_DIR="android"
+          else
+            TARGET_DIR="."
+          fi
+          echo "Downloading keystore to $TARGET_DIR from backend..."
+          curl -s -o "$TARGET_DIR/${{ inputs.keystore_filename }}" "${{ inputs.callback_url }}/keystore/${{ inputs.build_id }}?secret=${{ inputs.callback_secret }}"
+          
+          if [ ! -f "$TARGET_DIR/${{ inputs.keystore_filename }}" ]; then
+            echo "ERROR: Failed to download keystore file!" >&2
+            exit 1
+          fi
+          
+          FILE_SIZE=$(wc -c < "$TARGET_DIR/${{ inputs.keystore_filename }}")
+          if [ "$FILE_SIZE" -le 0 ]; then
+            echo "ERROR: Downloaded keystore is empty!" >&2
+            exit 1
+          fi
+          echo "Keystore downloaded successfully: $TARGET_DIR/${{ inputs.keystore_filename }} ($FILE_SIZE bytes)."
+
+      # ── 7. Build APK or AAB ──────────────────────────────────────────────
+      - name: Build Android (${{ inputs.android_format }})
+        run: |
+          if [ -f android/gradlew ]; then
+            GRADLE="./android/gradlew"
+            GRADLE_DIR="android"
+          else
+            GRADLE="./gradlew"
+            GRADLE_DIR="."
+          fi
+
+          if [ "${{ inputs.keystore_exists }}" = "true" ]; then
+            if [ -f "android/app/${{ inputs.keystore_filename }}" ]; then
+              KEYSTORE_PATH="$(pwd)/android/app/${{ inputs.keystore_filename }}"
+            elif [ -f "app/${{ inputs.keystore_filename }}" ]; then
+              KEYSTORE_PATH="$(pwd)/app/${{ inputs.keystore_filename }}"
+            elif [ -f "android/${{ inputs.keystore_filename }}" ]; then
+              KEYSTORE_PATH="$(pwd)/android/${{ inputs.keystore_filename }}"
+            else
+              KEYSTORE_PATH="$(pwd)/${{ inputs.keystore_filename }}"
+            fi
+            
+            echo "Building signed ${{ inputs.android_format }} using injected credentials from $KEYSTORE_PATH..."
+            if [ "${{ inputs.android_format }}" = "aab" ]; then
+              (cd "$GRADLE_DIR" && ./gradlew bundleRelease --no-daemon \
+                -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
+                -Pandroid.injected.signing.store.password="${{ inputs.keystore_password }}" \
+                -Pandroid.injected.signing.key.alias="${{ inputs.keystore_alias }}" \
+                -Pandroid.injected.signing.key.password="${{ inputs.keystore_key_password }}")
+            else
+              (cd "$GRADLE_DIR" && ./gradlew assembleRelease --no-daemon \
+                -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
+                -Pandroid.injected.signing.store.password="${{ inputs.keystore_password }}" \
+                -Pandroid.injected.signing.key.alias="${{ inputs.keystore_alias }}" \
+                -Pandroid.injected.signing.key.password="${{ inputs.keystore_key_password }}")
+            fi
+          else
+            echo "Building unsigned ${{ inputs.android_format }}..."
+            if [ "${{ inputs.android_format }}" = "aab" ]; then
+              (cd "$GRADLE_DIR" && ./gradlew bundleRelease --no-daemon)
+            else
+              (cd "$GRADLE_DIR" && ./gradlew assembleRelease --no-daemon)
+            fi
+          fi
+
+      # ── 8. Locate the build artifact ─────────────────────────────────────
+      - name: Locate build artifact
+        id: locate
+        run: |
+          if [ "${{ inputs.android_format }}" = "aab" ]; then
+            ARTIFACT=$(find . -name "app-release.aab" 2>/dev/null | head -n 1)
+          else
+            ARTIFACT=$(find . -name "app-release.apk" 2>/dev/null | head -n 1)
+          fi
+          if [ -z "$ARTIFACT" ]; then
+            echo "ERROR: Build artifact not found!" >&2
+            exit 1
+          fi
+          echo "artifact_path=$ARTIFACT" >> "$GITHUB_OUTPUT"
+          echo "Found artifact: $ARTIFACT"
+
+      # ── 9. Upload artifact to BuildPortal ────────────────────────────────
+      - name: Upload artifact to BuildPortal
+        id: upload
+        run: |
+          FILE="${{ steps.locate.outputs.artifact_path }}"
+          FILENAME=$(basename "$FILE")
+          CALLBACK_URL="${{ inputs.callback_url }}"
+          UPLOAD_URL="${CALLBACK_URL%/callback}/upload"
+
+          echo "Uploading $FILE to $UPLOAD_URL..."
+          RESPONSE=$(curl -s -S -F "file=@$FILE" \
+            -F "secret=${{ inputs.callback_secret }}" \
+            -F "buildId=${{ inputs.build_id }}" \
+            "$UPLOAD_URL")
+
+          echo "Response: $RESPONSE"
+          S3_KEY=$(echo "$RESPONSE" | grep -o '"s3Key":"[^"]*' | grep -o '[^"]*$')
+          if [ -z "$S3_KEY" ]; then
+            echo "ERROR: Artifact upload to BuildPortal failed!" >&2
+            exit 1
+          fi
+
+          echo "s3_key=$S3_KEY" >> "$GITHUB_OUTPUT"
+          echo "Upload complete: s3_key=$S3_KEY"
+
+      # ── 10. Get commit info ───────────────────────────────────────────────
+      - name: Get commit info
+        id: git
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "msg=$(git log -1 --pretty=%s)" >> "$GITHUB_OUTPUT"
+
+      # ── 11. Write Release Notes for Google Play ──────────────────────────
+      - name: Write Release Notes
+        if: ${{ success() && inputs.build_type == 'uat' && inputs.android_format == 'aab' }}
+        run: |
+          mkdir -p whatsnew
+          echo "${{ inputs.release_notes }}" > whatsnew/whatsnew-en-US
+          echo "Wrote release notes to whatsnew/whatsnew-en-US: ${{ inputs.release_notes }}"
+
+      # ── 13. Upload to Google Play (Internal Testing Track) ───────────────
+      - name: Upload to Google Play (Internal Testing)
+        if: ${{ success() && inputs.build_type == 'uat' && inputs.android_format == 'aab' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.BP_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ steps.package_info.outputs.package_name }}
+          releaseFiles: ${{ steps.locate.outputs.artifact_path }}
+          track: internal
+          whatsNewDirectory: whatsnew
+
+      # ── 14. Callback to BuildPortal — SUCCESS ────────────────────────────
+      - name: Notify BuildPortal (success)
+        if: success()
+        run: |
+          curl -s -X POST "${{ inputs.callback_url }}" \
+            -H "Content-Type: application/json" \
+            -H "ngrok-skip-browser-warning: true" \
+            -d "{
+              \"secret\": \"${{ inputs.callback_secret }}\",
+              \"buildId\": \"${{ inputs.build_id }}\",
+              \"status\": \"success\",
+              \"s3Key\": \"${{ steps.upload.outputs.s3_key }}\",
+              \"commitSha\": \"${{ steps.git.outputs.sha }}\",
+              \"commitMessage\": \"${{ steps.git.outputs.msg }}\",
+              \"buildNumber\": \"$RESOLVED_CODE\"
+            }"
+
+      # ── 15. Callback to BuildPortal — FAILURE ────────────────────────────
+      - name: Notify BuildPortal (failure)
+        if: failure()
+        run: |
+          curl -s -X POST "${{ inputs.callback_url }}" \
+            -H "Content-Type: application/json" \
+            -H "ngrok-skip-browser-warning: true" \
+            -d "{
+              \"secret\": \"${{ secrets.callback_secret }}\",
+              \"buildId\": \"${{ inputs.build_id }}\",
+              \"status\": \"failed\",
+              \"error\": \"GitHub Actions build failed. Check the workflow logs for details.\"
+            }"

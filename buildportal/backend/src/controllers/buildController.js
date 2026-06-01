@@ -12,8 +12,10 @@ export async function triggerBuild(req, res) {
     throw new AppError('Missing required build parameters', 400);
   }
 
-  // Keystore is optional when using GitHub Actions — GHA workflows handle signing via repo secrets.
-  // We still look it up so the agent/GHA dispatcher can attach it if available.
+  // Dynamically compute the next build number by checking the highest buildNumber in the database
+  const lastBuild = await Build.findOne({}).sort({ buildNumber: -1 });
+  const highestDbNumber = lastBuild && lastBuild.buildNumber ? lastBuild.buildNumber : 1000;
+  buildCounter = Math.max(highestDbNumber, buildCounter) + 1;
 
   const build = await Build.create({
     userId: req.user._id,
@@ -27,7 +29,7 @@ export async function triggerBuild(req, res) {
     versionName: versionName || '1.0.0',
     buildType: buildType || 'testing',
     releaseNotes: releaseNotes || '',
-    buildNumber: ++buildCounter,
+    buildNumber: buildCounter,
     status: 'queued',
     logs: [{ timestamp: new Date(), level: 'info', message: 'Build queued' }],
   });
