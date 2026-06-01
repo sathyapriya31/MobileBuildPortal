@@ -1,7 +1,7 @@
 import Bull from 'bull';
 import axios from 'axios';
 import Build from '../models/Build.js';
-// import Keystore from '../models/Keystore.js'; // ← Mac Mini: was used to attach keystore to agent payload. Android now uses GitHub Actions.
+import Keystore from '../models/Keystore.js';
 import AppleCredential from '../models/AppleCredential.js';
 import { notifySlack } from './slackService.js';
 import { getPresignedUrl, getObjectFromS3 } from './s3Service.js';
@@ -255,6 +255,29 @@ async function dispatchToGitHubActions(build, io) {
       throw new Error(`Failed to verify workflow file: ${checkErr.message}`);
     }
 
+    // Fetch project's keystore details if they exist
+    let keystoreInputs = { keystore_exists: 'false' };
+    try {
+      const ks = await Keystore.findOne({ userId: build.userId._id || build.userId, projectId: build.projectId });
+      if (ks && ks.keystoreS3Key) {
+        await logCallback('info', `🔐 Found uploaded Android Keystore: ${ks.originalFilename}. Generating secure presigned S3 URL...`);
+        const keystoreUrl = await getPresignedUrl(ks.keystoreS3Key, 7200); // 2 hours
+        keystoreInputs = {
+          keystore_exists: 'true',
+          keystore_url: keystoreUrl,
+          keystore_alias: ks.keystoreAlias,
+          keystore_password: ks.keystorePassword,
+          keystore_key_password: ks.keyPassword || ks.keystorePassword,
+          keystore_filename: ks.originalFilename || 'release.keystore',
+        };
+        await logCallback('info', `✅ Keystore URL generated. Injecting signing configuration into GitHub Actions...`);
+      } else {
+        await logCallback('info', `⚠️ No custom production Keystore found for this project. Build will compile with fallback signature.`);
+      }
+    } catch (ksErr) {
+      await logCallback('warn', `Could not resolve Keystore: ${ksErr.message}. Proceeding with default signing.`);
+    }
+
     // Trigger the workflow via workflow_dispatch
     try {
       await axios.post(
@@ -269,6 +292,7 @@ async function dispatchToGitHubActions(build, io) {
             android_format: build.androidFormat || 'apk',
             callback_url: `${backendUrl}/api/agent/github-actions/callback`,
             callback_secret: callbackSecret,
+            ...keystoreInputs,
           },
         },
         {
