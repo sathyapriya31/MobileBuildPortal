@@ -17,6 +17,26 @@ export default function KeystorePage() {
     });
   }, []);
 
+  const handleDownload = async (projectId, filename) => {
+    try {
+      const response = await api.get(`/keystores/download/${projectId}`, {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename || 'release.keystore');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Keystore downloaded successfully!');
+    } catch (err) {
+      toast.error('Failed to download keystore file');
+      console.error(err);
+    }
+  };
+
   return (
     <div style={styles.page} className="page-keystore">
       <header className="page-header">
@@ -41,7 +61,16 @@ export default function KeystorePage() {
                   <div style={styles.meta}>🔗 {ks.provider} · Project ID: {ks.projectId}</div>
                   <div style={styles.meta}>🕒 Updated {formatDistanceToNow(new Date(ks.updatedAt), { addSuffix: true })}</div>
                 </div>
-                <span style={styles.activeTag}>✅ Active</span>
+                <div style={styles.actionRow}>
+                  <span style={styles.activeTag}>✅ Active</span>
+                  <button 
+                    onClick={() => handleDownload(ks.projectId, ks.originalFilename)}
+                    style={styles.downloadBtn}
+                    className="download-btn-keystore"
+                  >
+                    📥 Download JKS
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -72,7 +101,19 @@ function getStyles() {
     cardInfo: { flex: 1 },
     projectName: { ...Fonts.Bold, fontSize: 'var(--text-sm)', color: Colors.text, marginBottom: 'var(--space-2)' },
     meta: { fontSize: 'var(--text-xs)', color: Colors.textMuted, marginBottom: 'var(--space-1)' },
-    activeTag: { fontSize: 'var(--text-xs)', color: Colors.success, background: Colors.successBg, padding: '3px 10px', borderRadius: 'var(--radius-full)', alignSelf: 'flex-start' },
+    activeTag: { fontSize: 'var(--text-xs)', color: Colors.success, background: Colors.successBg, padding: '3px 10px', borderRadius: 'var(--radius-full)' },
+    actionRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-2)' },
+    downloadBtn: { 
+      fontSize: 'var(--text-xs)', 
+      color: Colors.primary, 
+      background: 'transparent', 
+      border: `1px solid ${Colors.primary}`, 
+      padding: '6px 14px', 
+      borderRadius: 'var(--radius-md)', 
+      cursor: 'pointer', 
+      ...Fonts.SemiBold, 
+      transition: 'all var(--transition)' 
+    },
     infoBox: { background: Colors.surface, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-lg)' },
     infoTitle: { fontSize: 'var(--text-sm)', ...Fonts.Bold, color: Colors.text, marginBottom: 'var(--space-4)' },
     infoList: { paddingLeft: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', color: Colors.textMuted, fontSize: 'var(--text-sm)' },

@@ -4,7 +4,7 @@ import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import Keystore from '../models/Keystore.js';
-import { uploadBufferToS3 } from '../services/s3Service.js';
+import { uploadBufferToS3, getObjectFromS3 } from '../services/s3Service.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 const storage = multer.memoryStorage();
@@ -124,4 +124,21 @@ export async function updateFirebaseConfig(req, res) {
   if (!ks) throw new AppError('No keystore found for this project. Upload a keystore first.', 404);
 
   res.json({ keystore: { id: ks._id, projectId: ks.projectId, projectName: ks.projectName, filename: ks.originalFilename, uploadedAt: ks.updatedAt, firebaseCliToken: ks.firebaseCliToken } });
+}
+
+export async function downloadKeystoreFile(req, res) {
+  const { projectId } = req.params;
+  const ks = await Keystore.findOne({ userId: req.user._id, projectId: String(projectId) });
+  if (!ks || !ks.keystoreS3Key) {
+    throw new AppError('Keystore file not found for this project', 404);
+  }
+
+  try {
+    const s3Stream = await getObjectFromS3(ks.keystoreS3Key);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${ks.originalFilename}"`);
+    s3Stream.pipe(res);
+  } catch (err) {
+    throw new AppError(`Failed to stream keystore: ${err.message}`, 500);
+  }
 }
