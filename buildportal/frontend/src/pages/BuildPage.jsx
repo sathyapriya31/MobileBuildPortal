@@ -314,6 +314,33 @@ export default function BuildPage() {
                     )}
                   </p>
                 </div>
+
+                <div style={{ marginTop: '8px' }}>
+                  <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Version Name</label>
+                  <input
+                    type="text"
+                    value={versionName}
+                    onChange={(e) => setVersionName(e.target.value)}
+                    placeholder="e.g. 1.0.0"
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: `1px solid ${Colors.border || '#333'}`,
+                      borderRadius: 'var(--radius-md)',
+                      background: Colors.surface2 || '#111',
+                      color: Colors.text,
+                      fontSize: 'var(--text-sm)',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      transition: 'border-color var(--transition)'
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = Colors.primary}
+                    onBlur={(e) => e.target.style.borderColor = Colors.border || '#333'}
+                  />
+                  <p style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, marginTop: '6px' }}>
+                    The user-facing version of the app displayed in the Google Play Store (e.g. 1.0.0).
+                  </p>
+                </div>
               </div>
             </section>
           )}
