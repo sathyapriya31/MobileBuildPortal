@@ -171,9 +171,9 @@ export default function BuildPage() {
     }
   };
 
-  // Keystore section is now optional — Android builds run on GitHub Actions which uses repo secrets for signing.
-  const needsKeystore = false;
-  const needsAppleCreds = platform === 'ios';
+  // Keystore and Apple Credentials visibility conditional based on selected platform(s)
+  const needsKeystore = platform === 'android' || platform === 'both';
+  const needsAppleCreds = platform === 'ios' || platform === 'both';
 
   return (
     <div style={styles.page} className="page-build">
