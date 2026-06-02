@@ -16,7 +16,7 @@ export default function AuthCallback() {
       localStorage.removeItem('bp_logged_out');
       dispatch(setToken(token));
       dispatch(fetchMe()).then(() => {
-        connectSocket(token);
+        connectSocket(token, dispatch);
         navigate('/build', { replace: true });
       });
     } else {

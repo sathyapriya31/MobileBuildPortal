@@ -53,15 +53,12 @@ export default function HistoryPage() {
 
   useEffect(() => {
     // Subscribe to active builds
-    builds.filter(b => ['queued', 'building'].includes(b.status)).forEach(b => {
-      subscribeToBuild(b._id, {
-        onStatus: (data) => dispatch(updateBuildStatus(data)),
-        onLog: (data) => dispatch(addBuildLog({ buildId: data.buildId, ...data })),
-        onComplete: (data) => dispatch(updateBuildStatus(data)),
-      });
+    const activeBuilds = builds.filter(b => ['queued', 'building'].includes(b.status));
+    activeBuilds.forEach(b => {
+      subscribeToBuild(b._id);
     });
-    return () => builds.forEach(b => unsubscribeFromBuild(b._id));
-  }, [builds.length]);
+    return () => activeBuilds.forEach(b => unsubscribeFromBuild(b._id));
+  }, [builds]);
 
   const handleCancel = (id) => dispatch(cancelBuild(id));
   const toggleLogs = (id) => setExpanded(expanded === id ? null : id);

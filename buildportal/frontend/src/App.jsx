@@ -23,7 +23,7 @@ export default function App() {
     const token = sessionStorage.getItem('bp_token');
     if (token) {
       dispatch(setToken(token));
-      dispatch(fetchMe()).then(() => connectSocket(token));
+      dispatch(fetchMe()).then(() => connectSocket(token, dispatch));
     } else {
       dispatch({ type: 'auth/fetchMe/rejected' }); // mark initialized
     }

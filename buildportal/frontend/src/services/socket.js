@@ -1,6 +1,8 @@
 import { io } from 'socket.io-client';
+import { updateBuildStatus, addBuildLog } from '../store/slices/buildsSlice.js';
 
 let socket = null;
+const activeSubscriptions = new Set();
 
 export function getSocket() {
   if (!socket) {
@@ -9,27 +11,54 @@ export function getSocket() {
   return socket;
 }
 
-export function connectSocket(token) {
+export function connectSocket(token, dispatch) {
   const s = getSocket();
   s.auth = { token };
+
+  // Setup connection/reconnection event
+  s.off('connect');
+  s.on('connect', () => {
+    console.log('🔌 Socket connected. Resubscribing to active builds:', Array.from(activeSubscriptions));
+    activeSubscriptions.forEach((buildId) => {
+      s.emit('subscribe:build', buildId);
+    });
+  });
+
+  // Setup global event listeners to update Redux store directly
+  s.off('build:status');
+  s.off('build:log');
+  s.off('build:complete');
+
+  s.on('build:status', (data) => {
+    if (dispatch) dispatch(updateBuildStatus(data));
+  });
+
+  s.on('build:log', (data) => {
+    if (dispatch) dispatch(addBuildLog({ buildId: data.buildId, ...data }));
+  });
+
+  s.on('build:complete', (data) => {
+    if (dispatch) dispatch(updateBuildStatus(data));
+  });
+
   s.connect();
   return s;
 }
 
-export function subscribeToBuild(buildId, callbacks) {
+export function subscribeToBuild(buildId) {
   const s = getSocket();
-  s.emit('subscribe:build', buildId);
-  if (callbacks.onStatus) s.on('build:status', callbacks.onStatus);
-  if (callbacks.onLog) s.on('build:log', callbacks.onLog);
-  if (callbacks.onComplete) s.on('build:complete', callbacks.onComplete);
+  activeSubscriptions.add(buildId);
+  if (s.connected) {
+    s.emit('subscribe:build', buildId);
+  }
 }
 
 export function unsubscribeFromBuild(buildId) {
   const s = getSocket();
-  s.emit('unsubscribe:build', buildId);
-  s.off('build:status');
-  s.off('build:log');
-  s.off('build:complete');
+  activeSubscriptions.delete(buildId);
+  if (s.connected) {
+    s.emit('unsubscribe:build', buildId);
+  }
 }
 
 export function disconnectSocket() {
@@ -37,4 +66,5 @@ export function disconnectSocket() {
     socket.disconnect();
     socket = null;
   }
+  activeSubscriptions.clear();
 }
