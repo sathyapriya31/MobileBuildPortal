@@ -1,12 +1,15 @@
+import axios from 'axios';
 import Build from '../models/Build.js';
 import Keystore from '../models/Keystore.js';
 import { enqueueBuild } from '../services/buildQueue.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { io } from '../server.js';
+import { parseRepoUrl } from '../services/xcodeCloudService.js';
 
 let buildCounter = 1000;
 
 export async function triggerBuild(req, res) {
-  const { projectId, projectName, repoUrl, provider, branch, platform, androidFormat, versionName, buildType } = req.body;
+  const { projectId, projectName, repoUrl, provider, branch, platform, androidFormat, versionName, buildType, buildNumber } = req.body;
 
   if (!projectId || !projectName || !repoUrl || !provider || !branch || !platform) {
     throw new AppError('Missing required build parameters', 400);
@@ -26,7 +29,7 @@ export async function triggerBuild(req, res) {
     androidFormat: (platform === 'android' || platform === 'both') ? (androidFormat || 'apk') : undefined,
     versionName: versionName || '1.0.0',
     buildType: buildType || 'testing',
-    buildNumber: ++buildCounter,
+    buildNumber: buildNumber ? parseInt(buildNumber) : ++buildCounter,
     status: 'queued',
     logs: [{ timestamp: new Date(), level: 'info', message: 'Build queued' }],
   });
@@ -90,8 +93,110 @@ export async function cancelBuild(req, res) {
   if (!['queued', 'building'].includes(build.status)) {
     throw new AppError('Build cannot be cancelled in current state', 400);
   }
+
+  const buildId = String(build._id);
+
+  if (build.provider === 'github' && (build.platform === 'android' || build.platform === 'both')) {
+    try {
+      const user = req.user;
+      if (user && user.accessToken) {
+        const { path: repoPath } = parseRepoUrl(build.repoUrl);
+        const [owner, repo] = repoPath.split('/');
+        if (owner && repo) {
+          const workflowFile = 'buildportal-android.yml';
+
+          build.logs.push({ timestamp: new Date(), level: 'info', message: '🔍 Contacting GitHub to cancel active build workflow...' });
+          io.to(`build:${buildId}`).emit('build:log', {
+            buildId,
+            level: 'info',
+            message: '🔍 Contacting GitHub to cancel active build workflow...',
+            timestamp: new Date(),
+          });
+
+          // Fetch runs of the specific workflow file on the target branch
+          const response = await axios.get(
+            `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/runs?branch=${encodeURIComponent(build.branch)}`,
+            {
+              headers: {
+                Authorization: `token ${user.accessToken}`,
+                Accept: 'application/vnd.github.v3+json',
+                'User-Agent': 'BuildPortal',
+              },
+            }
+          );
+
+          const runs = response.data.workflow_runs || [];
+          const activeRuns = runs.filter(run =>
+            ['queued', 'in_progress', 'requested', 'waiting', 'pending'].includes(run.status)
+          );
+
+          if (activeRuns.length > 0) {
+            for (const run of activeRuns) {
+              build.logs.push({ timestamp: new Date(), level: 'info', message: `🛑 Cancelling GitHub Action workflow run: ID ${run.id}` });
+              io.to(`build:${buildId}`).emit('build:log', {
+                buildId,
+                level: 'info',
+                message: `🛑 Cancelling GitHub Action workflow run: ID ${run.id}`,
+                timestamp: new Date(),
+              });
+
+              await axios.post(
+                `https://api.github.com/repos/${owner}/${repo}/actions/runs/${run.id}/cancel`,
+                {},
+                {
+                  headers: {
+                    Authorization: `token ${user.accessToken}`,
+                    Accept: 'application/vnd.github.v3+json',
+                    'User-Agent': 'BuildPortal',
+                  },
+                }
+              );
+            }
+            build.logs.push({ timestamp: new Date(), level: 'info', message: `✅ Successfully cancelled ${activeRuns.length} active GitHub workflow run(s).` });
+            io.to(`build:${buildId}`).emit('build:log', {
+              buildId,
+              level: 'info',
+              message: `✅ Successfully cancelled ${activeRuns.length} active GitHub workflow run(s).`,
+              timestamp: new Date(),
+            });
+          } else {
+            build.logs.push({ timestamp: new Date(), level: 'warn', message: '⚠️ No active GitHub Action workflow runs found for this branch.' });
+            io.to(`build:${buildId}`).emit('build:log', {
+              buildId,
+              level: 'warn',
+              message: '⚠️ No active GitHub Action workflow runs found for this branch.',
+              timestamp: new Date(),
+            });
+          }
+        }
+      } else {
+        build.logs.push({ timestamp: new Date(), level: 'warn', message: '⚠️ GitHub access token missing. Skipping GitHub Action cancellation.' });
+        io.to(`build:${buildId}`).emit('build:log', {
+          buildId,
+          level: 'warn',
+          message: '⚠️ GitHub access token missing. Skipping GitHub Action cancellation.',
+          timestamp: new Date(),
+        });
+      }
+    } catch (err) {
+      console.error('Failed to cancel GitHub Action workflow run:', err.message);
+      build.logs.push({ timestamp: new Date(), level: 'error', message: `❌ Failed to cancel GitHub Action workflow run: ${err.message}` });
+      io.to(`build:${buildId}`).emit('build:log', {
+        buildId,
+        level: 'error',
+        message: `❌ Failed to cancel GitHub Action workflow run: ${err.message}`,
+        timestamp: new Date(),
+      });
+    }
+  }
+
   build.status = 'cancelled';
   build.finishedAt = new Date();
+  build.logs.push({ timestamp: new Date(), level: 'info', message: 'Build status set to CANCELED.' });
   await build.save();
+
+  // Notify frontend of status change
+  io.to(`build:${buildId}`).emit('build:status', { buildId, status: 'cancelled' });
+
   res.json({ build });
 }
