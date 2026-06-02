@@ -9,7 +9,7 @@ import { parseRepoUrl } from '../services/xcodeCloudService.js';
 let buildCounter = 1000;
 
 export async function triggerBuild(req, res) {
-  const { projectId, projectName, repoUrl, provider, branch, platform, androidFormat, versionName, buildType, buildNumber } = req.body;
+  const { projectId, projectName, repoUrl, provider, branch, platform, androidFormat, versionName, buildType, buildNumber, releaseNotes } = req.body;
 
   if (!projectId || !projectName || !repoUrl || !provider || !branch || !platform) {
     throw new AppError('Missing required build parameters', 400);
@@ -31,6 +31,7 @@ export async function triggerBuild(req, res) {
     buildType: buildType || 'testing',
     buildNumber: buildNumber ? parseInt(buildNumber) : ++buildCounter,
     status: 'queued',
+    releaseNotes: releaseNotes || '',
     logs: [{ timestamp: new Date(), level: 'info', message: 'Build queued' }],
   });
 

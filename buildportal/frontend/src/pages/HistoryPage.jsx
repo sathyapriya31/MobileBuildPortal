@@ -257,6 +257,22 @@ export default function HistoryPage() {
                   {expanded === build._id && (
                     <tr>
                       <td colSpan="11" style={styles.logsRowTd}>
+                        {build.releaseNotes && (
+                          <div style={{
+                            background: Colors.surface3 || 'rgba(255,255,255,0.03)',
+                            padding: 'var(--space-3) var(--space-5)',
+                            borderBottom: `1px solid ${Colors.border}`,
+                            color: Colors.text,
+                            fontSize: 'var(--text-sm)',
+                          }}>
+                            <div style={{ fontSize: 'var(--text-xs)', ...Fonts.SemiBold, color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>
+                              📝 Release Notes (UAT & Production)
+                            </div>
+                            <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', color: Colors.text }}>
+                              {build.releaseNotes}
+                            </div>
+                          </div>
+                        )}
                         {build.status === 'failed' && (build.error || build.logs?.some(l => l.level === 'error')) && (
                           <div style={styles.errorBanner}>
                             <span style={{ fontSize: '1.2rem' }}>⚠️</span>

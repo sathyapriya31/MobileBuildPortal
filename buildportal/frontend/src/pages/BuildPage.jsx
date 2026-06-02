@@ -44,6 +44,7 @@ export default function BuildPage() {
   const [keystoreMode, setKeystoreMode] = useState('upload'); // 'upload' or 'generate'
   const [versionName, setVersionName] = useState('1.0.0');
   const [versionCode, setVersionCode] = useState('');
+  const [releaseNotes, setReleaseNotes] = useState('');
   const [buildType, setBuildType] = useState('testing');
   const [appleKeyFile, setAppleKeyFile] = useState(null);
   const [appleKeyId, setAppleKeyId] = useState('');
@@ -163,6 +164,7 @@ export default function BuildPage() {
       versionName,
       buildNumber: versionCode ? parseInt(versionCode) : undefined,
       buildType,
+      releaseNotes,
     }));
     if (triggerBuild.fulfilled.match(result)) {
       toast.success('Build queued! 🚀');
@@ -371,6 +373,35 @@ export default function BuildPage() {
                       Integer version code. Leave blank to auto-increment sequentially.
                     </p>
                   </div>
+                </div>
+
+                <div style={{ marginTop: '16px' }}>
+                  <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Release Notes (UAT & Production)</label>
+                  <textarea
+                    value={releaseNotes}
+                    onChange={(e) => setReleaseNotes(e.target.value)}
+                    placeholder="Describe what's new in this build (e.g. bug fixes, new features)..."
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: `1px solid ${Colors.border || '#333'}`,
+                      borderRadius: 'var(--radius-md)',
+                      background: Colors.surface2 || '#111',
+                      color: Colors.text,
+                      fontSize: 'var(--text-sm)',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      fontFamily: 'inherit',
+                      resize: 'vertical',
+                      transition: 'border-color var(--transition)'
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = Colors.primary}
+                    onBlur={(e) => e.target.style.borderColor = Colors.border || '#333'}
+                  />
+                  <p style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, marginTop: '6px' }}>
+                    These notes will be published to Google Play (Android) and TestFlight (iOS) for UAT & Production releases.
+                  </p>
                 </div>
               </div>
             </section>

@@ -28,6 +28,7 @@ const buildSchema = new mongoose.Schema({
   duration: Number,
   buildMetadata: { appVersion: String, buildNumber: String, commitSha: String, commitMessage: String },
   error: String,
+  releaseNotes: String,
 }, { timestamps: true });
 
 buildSchema.index({ userId: 1, createdAt: -1 });
