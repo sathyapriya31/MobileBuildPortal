@@ -85,6 +85,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ── 0. Register Workflow Run ID ──────────────────────────────────────
+      - name: Register Workflow Run ID
+        run: |
+          curl -s -X POST "${{ inputs.callback_url }}/run-id" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"secret\": \"${{ inputs.callback_secret }}\",
+              \"buildId\": \"${{ inputs.build_id }}\",
+              \"runId\": \"${{ github.run_id }}\"
+            }"
+
       # ── 1. Checkout ────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -167,69 +178,7 @@ jobs:
           echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
           echo "Detected Package Name: $PACKAGE_NAME"
 
-      # ── 7. Query Google Play Console for Highest Version Code ───────────
-      - name: Fetch Max Google Play Version Code
-        id: play_version
-        run: |
-          if [ -z "$SERVICE_ACCOUNT_JSON" ] || [ -z "$PACKAGE_NAME" ]; then
-            echo "Skipping Play Store version check: service account secret or package name not available."
-            echo "resolved_version_code=${{ inputs.version_code }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "Installing Google Play API client on-the-fly..."
-            npm install googleapis --no-save
-            echo 'const { google } = require("googleapis");
-            const fs = require("fs");
-            async function run() {
-              const serviceAccountJson = process.env.SERVICE_ACCOUNT_JSON;
-              const packageName = process.env.PACKAGE_NAME;
-              const dispatchedVersionCode = parseInt(process.env.DISPATCHED_VERSION_CODE, 10) || 1;
-              try {
-                const credentials = JSON.parse(serviceAccountJson);
-                const auth = new google.auth.JWT({
-                  email: credentials.client_email,
-                  key: credentials.private_key,
-                  scopes: ["https://www.googleapis.com/auth/androidpublisher"]
-                });
-                await auth.authorize();
-                const androidpublisher = google.androidpublisher({ version: "v3", auth });
-                const edit = await androidpublisher.edits.insert({ packageName });
-                const editId = edit.data.id;
-                const tracksList = ["internal", "alpha", "beta", "production"];
-                let maxVersionCode = 0;
-                for (const trackName of tracksList) {
-                  try {
-                    const track = await androidpublisher.edits.tracks.get({ packageName, editId, track: trackName });
-                    if (track.data && track.data.releases) {
-                      for (const release of track.data.releases) {
-                        if (release.versionCodes) {
-                          for (const code of release.versionCodes) {
-                            const numCode = parseInt(code, 10);
-                            if (numCode > maxVersionCode) maxVersionCode = numCode;
-                          }
-                        }
-                      }
-                    }
-                  } catch (tErr) {}
-                }
-                try { await androidpublisher.edits.delete({ packageName, editId }); } catch (e) {}
-                console.log("Max version code on Google Play Console: " + maxVersionCode);
-                const resolvedVersionCode = Math.max(dispatchedVersionCode, maxVersionCode + 1);
-                console.log("Resolved version code: " + resolvedVersionCode);
-                fs.appendFileSync(process.env.GITHUB_OUTPUT, "resolved_version_code=" + resolvedVersionCode + "\n");
-              } catch (err) {
-                console.error("Error fetching version code from Play Console:", err.message);
-                fs.appendFileSync(process.env.GITHUB_OUTPUT, "resolved_version_code=" + dispatchedVersionCode + "\n");
-              }
-            }
-            run();' > get_version.js
-            node get_version.js
-          fi
-        env:
-          SERVICE_ACCOUNT_JSON: ${{ secrets.BP_PLAY_SERVICE_ACCOUNT_JSON }}
-          PACKAGE_NAME: ${{ steps.package_info.outputs.package_name }}
-          DISPATCHED_VERSION_CODE: ${{ inputs.version_code }}
-
-      # ── 8. Set version code and version name ────────────────────────────
+      # ── 7. Set version code and version name ────────────────────────────
       - name: Set version in build.gradle
         run: |
           GRADLE_FILE="android/app/build.gradle"
@@ -237,9 +186,9 @@ jobs:
             GRADLE_FILE="app/build.gradle"
           fi
           
-          RESOLVED_CODE="${{ steps.play_version.outputs.resolved_version_code }}"
+          RESOLVED_CODE="${{ inputs.version_code }}"
           if [ -z "$RESOLVED_CODE" ]; then
-            RESOLVED_CODE="${{ inputs.version_code }}"
+            RESOLVED_CODE="1"
           fi
           
           echo "RESOLVED_CODE=$RESOLVED_CODE" >> "$GITHUB_ENV"
@@ -407,16 +356,24 @@ jobs:
               \"buildNumber\": \"$RESOLVED_CODE\"
             }"
 
-      # ── 15. Callback to BuildPortal — FAILURE ────────────────────────────
-      - name: Notify BuildPortal (failure)
-        if: failure()
+      # ── 15. Callback to BuildPortal — FAILURE or CANCEL ──────────────────
+      - name: Notify BuildPortal (failure or cancel)
+        if: cancelled() || failure()
         run: |
+          STATUS="failed"
+          if [ "${{ job.status }}" = "cancelled" ]; then
+            STATUS="cancelled"
+            ERROR_MSG="GitHub Actions build was cancelled."
+          else
+            ERROR_MSG="GitHub Actions build failed. Check the workflow logs for details."
+          fi
+
           curl -s -X POST "${{ inputs.callback_url }}" \
             -H "Content-Type: application/json" \
             -H "ngrok-skip-browser-warning: true" \
             -d "{
-              \"secret\": \"${{ secrets.callback_secret }}\",
+              \"secret\": \"${{ inputs.callback_secret }}\",
               \"buildId\": \"${{ inputs.build_id }}\",
-              \"status\": \"failed\",
-              \"error\": \"GitHub Actions build failed. Check the workflow logs for details.\"
+              \"status\": \"$STATUS\",
+              \"error\": \"$ERROR_MSG\"
             }"
