@@ -42,6 +42,7 @@ export default function BuildPage() {
   const [keyPass, setKeyPass] = useState('');
   const [uploadingKS, setUploadingKS] = useState(false);
   const [keystoreMode, setKeystoreMode] = useState('upload'); // 'upload' or 'generate'
+  const [versionCode, setVersionCode] = useState('1');
   const [versionName, setVersionName] = useState('1.0.0');
   const [buildType, setBuildType] = useState('testing');
   const [releaseNotes, setReleaseNotes] = useState('Initial UAT Release');
@@ -166,7 +167,8 @@ export default function BuildPage() {
       branch,
       platform,
       androidFormat: (platform === 'android' || platform === 'both') ? androidFormat : undefined,
-      versionName,
+      versionCode: (platform === 'android' || platform === 'both') && buildType === 'uat' ? versionCode : undefined,
+      versionName: buildType === 'uat' ? versionName : undefined,
       buildType,
       releaseNotes: buildType === 'uat' ? releaseNotes : undefined,
     }));
@@ -177,8 +179,8 @@ export default function BuildPage() {
     }
   };
 
-  // Keystore section is now optional — Android builds run on GitHub Actions which uses repo secrets for signing.
-  const needsKeystore = false;
+  // Keystore section is shown dynamically for Android builds
+  const needsKeystore = platform === 'android';
   const needsAppleCreds = platform === 'ios';
 
   return (
@@ -334,6 +336,38 @@ export default function BuildPage() {
                     )}
                   </p>
                 </div>
+
+                {(platform === 'android' || platform === 'both') && buildType === 'uat' && (
+                  <div style={{ borderTop: `1px solid ${Colors.border}`, paddingTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', animation: 'fadeIn 0.3s ease' }}>
+                    <div>
+                      <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Version Code</label>
+                      <input
+                        type="number"
+                        min="1"
+                        style={{ ...styles.input, width: '100%', outline: 'none' }}
+                        placeholder="e.g. 1"
+                        value={versionCode}
+                        onChange={(e) => setVersionCode(e.target.value)}
+                      />
+                      <p style={{ fontSize: '10px', color: Colors.textMuted, marginTop: '4px', lineHeight: '1.4' }}>
+                        Internal positive integer used to identify this build on Google Play. Auto-increment is removed.
+                      </p>
+                    </div>
+                    <div>
+                      <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Version Name</label>
+                      <input
+                        type="text"
+                        style={{ ...styles.input, width: '100%', outline: 'none' }}
+                        placeholder="e.g. 1.0.0"
+                        value={versionName}
+                        onChange={(e) => setVersionName(e.target.value)}
+                      />
+                      <p style={{ fontSize: '10px', color: Colors.textMuted, marginTop: '4px', lineHeight: '1.4' }}>
+                        The user-facing version string shown to users on their devices.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {buildType === 'uat' && (
                   <div style={{ borderTop: `1px solid ${Colors.border}`, paddingTop: '16px', animation: 'fadeIn 0.3s ease' }}>

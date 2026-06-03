@@ -213,6 +213,48 @@ router.post('/github-actions/upload', upload.single('file'), async (req, res) =>
 // ══════════════════════════════════════════════════════════════════════════════════════
 
 /**
+ * POST /api/agent/github-actions/callback/run-id
+ *
+ * Called by the GitHub Actions workflow at the beginning of the build to register the workflow run ID.
+ * Secured with GITHUB_ACTIONS_CALLBACK_SECRET.
+ *
+ * Body: { secret, buildId, runId }
+ */
+router.post('/github-actions/callback/run-id', async (req, res) => {
+  const { secret, buildId, runId } = req.body;
+
+  if (secret !== process.env.GITHUB_ACTIONS_CALLBACK_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  try {
+    const build = await Build.findById(buildId);
+    if (!build) return res.status(404).json({ error: 'Build not found' });
+
+    build.githubRunId = String(runId);
+    build.logs.push({
+      timestamp: new Date(),
+      level: 'info',
+      message: `Registered GitHub Actions Workflow Run ID: ${runId}`
+    });
+    await build.save();
+
+    // Stream log to frontend in real-time
+    io.to(`build:${buildId}`).emit('build:log', {
+      buildId,
+      level: 'info',
+      message: `Registered GitHub Actions Workflow Run ID: ${runId}`,
+      timestamp: new Date()
+    });
+
+    res.json({ registered: true });
+  } catch (err) {
+    console.error('Error registering GHA workflow run ID:', err);
+    res.status(500).json({ error: `Registration failed: ${err.message}` });
+  }
+});
+
+/**
  * POST /api/agent/github-actions/callback
  *
  * Called by the GitHub Actions workflow at the end of every Android build.
@@ -229,6 +271,11 @@ router.post('/github-actions/callback', async (req, res) => {
 
   const build = await Build.findById(buildId);
   if (!build) return res.status(404).json({ error: 'Build not found' });
+
+  // If the build was already cancelled by the user, ignore any late callbacks
+  if (build.status === 'cancelled') {
+    return res.json({ received: true, message: 'Build was already cancelled by user.' });
+  }
 
   build.status = status; // 'success' or 'failed'
   build.finishedAt = new Date();
@@ -294,10 +341,12 @@ router.post('/github-actions/callback', async (req, res) => {
   // Emit a final log entry so the live log panel shows the result
   const logMessage = status === 'success'
     ? '✅ GitHub Actions build completed successfully!'
-    : `❌ GitHub Actions build failed: ${error || 'Unknown error'}`;
+    : status === 'cancelled'
+      ? '🛑 GitHub Actions build was manually cancelled.'
+      : `❌ GitHub Actions build failed: ${error || 'Unknown error'}`;
   io.to(`build:${buildId}`).emit('build:log', {
     buildId,
-    level: status === 'success' ? 'info' : 'error',
+    level: status === 'success' ? 'info' : status === 'cancelled' ? 'warn' : 'error',
     message: logMessage,
     timestamp: new Date(),
   });
