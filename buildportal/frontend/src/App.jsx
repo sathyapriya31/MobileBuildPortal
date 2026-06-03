@@ -5,10 +5,13 @@ import { fetchMe, setToken } from './store/slices/authSlice.js';
 import { connectSocket } from './services/socket.js';
 import LoginPage from './pages/LoginPage.jsx';
 import AuthCallback from './pages/AuthCallback.jsx';
+import AnalyticsPage from './pages/Analytics.jsx';
 import DashboardLayout from './components/DashboardLayout.jsx';
 import BuildPage from './pages/BuildPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import KeystorePage from './pages/KeystorePage.jsx';
+import RepositoriesPage from './pages/RepositoriesPage.jsx';
+import ErrorMonitorPage from './pages/ErrorMonitorPage.jsx';
 
 function PrivateRoute({ children }) {
   const { user, initialized } = useSelector(s => s.auth);
@@ -34,10 +37,13 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
-        <Route index element={<Navigate to="/build" replace />} />
+        <Route index element={<Navigate to="/analytics" replace />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="build" element={<BuildPage />} />
         <Route path="history" element={<HistoryPage />} />
         <Route path="keystores" element={<KeystorePage />} />
+        <Route path="repositories" element={<RepositoriesPage />} />
+        <Route path="error-monitor" element={<ErrorMonitorPage />} />
       </Route>
     </Routes>
   );

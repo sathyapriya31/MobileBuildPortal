@@ -10,9 +10,9 @@ const Colors = {
   textMuted: '#64748b',
   textFaint: '#94a3b8',
 
-  primary: '#14AED5',
-  primaryHover: '#0f9ac1',
-  primaryBg: 'rgba(20,174,213,0.08)',
+  primary: '#0F4CB5',
+  primaryHover: '#0f4cb5',
+  primaryBg: 'rgba(15,76,181,0.08)',
 
   success: '#76DC00',
   successBg: 'rgba(118,220,0,0.08)',

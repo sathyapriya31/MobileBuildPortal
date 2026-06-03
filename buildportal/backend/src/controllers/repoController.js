@@ -19,14 +19,17 @@ export async function getGithubRepos(req, res) {
     }
   }
 
-  const url = search
-    ? `https://api.github.com/search/repositories?q=${encodeURIComponent(search)}+user:${username}&per_page=${per_page}&page=${page}`
-    : `https://api.github.com/user/repos?per_page=${per_page}&page=${page}&sort=updated&type=owner`;
+  const url = `https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated&type=all`;
 
   const { data } = await axios.get(url, {
     headers: { Authorization: `Bearer ${req.user.accessToken}`, Accept: 'application/vnd.github.v3+json' },
   });
-  const repos = search ? data.items : data;
+  const repos = search
+    ? data.filter(r =>
+        r.name.toLowerCase().includes(search.toLowerCase()) ||
+        r.full_name.toLowerCase().includes(search.toLowerCase())
+      )
+    : data;
   res.json({
     repos: repos.map(r => ({
       id: String(r.id),
