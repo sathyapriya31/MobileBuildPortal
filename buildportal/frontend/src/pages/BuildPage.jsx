@@ -6,6 +6,7 @@ import { triggerBuild } from '../store/slices/buildsSlice.js';
 import { api } from '../services/api.js';
 import Colors from '../config/colors.js';
 import Fonts from '../config/fonts.js';
+import { Bell, HelpCircle } from 'lucide-react';
 
 const AndroidIcon = ({ size = 24, ...props }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -174,11 +175,46 @@ export default function BuildPage() {
   const needsAppleCreds = platform === 'ios';
 
   return (
-    <div style={styles.page} className="page-build">
-      <header className="page-header">
-        <h1 style={styles.title} className="text-lg md:text-xl">New Build</h1>
-        <p style={styles.subtitle}>Select your project, branch, and platform to trigger a build via <strong>GitHub Actions</strong>.</p>
-      </header>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: Colors.bg, ...Fonts.Regular }}>
+      
+      {/* ── Top Header Bar ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: Colors.headerBg,
+        borderBottom: '1px solid ' + Colors.headerBorder,
+        padding: '16px 32px',
+        height: '64px',
+        boxSizing: 'border-box'
+      }}>
+        {/* Left Side: Breadcrumb */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#475569', ...Fonts.Medium }}>
+          <span>Pipelines</span>
+          <span style={{ color: '#94a3b8' }}>&rsaquo;</span>
+          <span style={{ color: '#00388d', ...Fonts.Bold }}>New Configuration</span>
+        </div>
+
+        {/* Right Side: Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          <button style={{ background: 'none', border: 'none', color: Colors.headerIcon, cursor: 'pointer', position: 'relative', padding: 0 }}>
+            <Bell size={20} />
+            <span style={{ position: 'absolute', top: 1, right: 1, width: 6, height: 6, backgroundColor: Colors.trendRed, borderRadius: '50%' }} />
+          </button>
+          <button style={{ background: 'none', border: 'none', color: Colors.headerIcon, cursor: 'pointer', padding: 0 }}>
+            <HelpCircle size={20} />
+          </button>
+          {user && <img src={user.avatar} alt={user.name} style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid ' + Colors.headerBorder }} />}
+        </div>
+      </div>
+
+      {/* ── Page Content Container ── */}
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
+        <div style={styles.page} className="page-build">
+          <header className="page-header" style={{ marginBottom: '16px' }}>
+            <h1 style={styles.title} className="text-lg md:text-xl">New Build</h1>
+            <p style={styles.subtitle}>Select your project, branch, and platform to trigger a build via <strong>GitHub Actions</strong>.</p>
+          </header>
 
       <div className="grid-build">
         {/* Step 1 – Repo */}
@@ -410,6 +446,8 @@ export default function BuildPage() {
             {triggerLoading ? '⏳ Queuing Build...' : '⚡ Trigger Build'}
           </button>
         </div>
+      </div>
+      </div>
       </div>
     </div>
   );
