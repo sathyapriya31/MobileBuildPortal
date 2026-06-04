@@ -39,6 +39,28 @@ const Colors = {
 
   cancelled: '#9ca3af',
   shadow: '0 4px 24px rgba(15,23,42,0.08)',
+
+  // Custom theme colors matching design layout
+  sidebarBrand: '#00388d',
+  sidebarActiveBg: '#d2e9fc',
+  sidebarActiveText: '#00388d',
+  sidebarBg: '#ffffff',
+  sidebarUnselectedText: '#1e293b',
+
+  headerBg: '#ffffff',
+  headerBorder: '#e2e8f0',
+  headerIcon: '#475569',
+
+  cardBg: '#ffffff',
+  cardBorder: '#e5e7eb',
+  cardShadow: '0 4px 12px rgba(0, 0, 0, 0.02)',
+  metricPrimary: '#00388d',
+  metricSuccess: '#137333',
+  metricSlate: '#273b5a',
+  progressFilled: '#00388d',
+  progressEmpty: '#d2e9fc',
+  trendGreen: '#16a34a',
+  trendRed: '#ef4444',
 };
 
 export default Colors;

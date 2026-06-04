@@ -20,7 +20,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div style={styles.logo}>
           <img src={spritleLogo} alt="Spritle Logo" style={{ width: '50px', height: '50px', objectFit: 'contain' }} />
-          <span style={styles.logoText}>BuildPortal</span>
+          <span style={styles.logoText}>Spritle Paddock</span>
         </div>
         <h1 style={styles.title}>Mobile Build Generator</h1>
         <p style={styles.subtitle}>Connect your GitHub or GitLab to start building iOS and Android apps from your Mac Mini.</p>

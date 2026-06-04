@@ -23,7 +23,7 @@ export const cancelBuild = createAsyncThunk('builds/cancel', async (id) => {
 
 const buildsSlice = createSlice({
   name: 'builds',
-  initialState: { builds: [], total: 0, loading: false, triggerLoading: false, activeBuild: null },
+  initialState: { builds: [], total: 0, loading: false, triggerLoading: false, activeBuild: null, metrics: null },
   reducers: {
     updateBuildStatus(state, action) {
       const { buildId, status, artifacts, logs } = action.payload;
@@ -46,7 +46,12 @@ const buildsSlice = createSlice({
   },
   extraReducers: (b) => {
     b.addCase(fetchBuilds.pending, (s) => { s.loading = true; });
-    b.addCase(fetchBuilds.fulfilled, (s, a) => { s.builds = a.payload.builds; s.total = a.payload.total; s.loading = false; });
+    b.addCase(fetchBuilds.fulfilled, (s, a) => {
+      s.builds = a.payload.builds;
+      s.total = a.payload.total;
+      s.metrics = a.payload.metrics;
+      s.loading = false;
+    });
     b.addCase(fetchBuilds.rejected, (s) => { s.loading = false; });
     b.addCase(triggerBuild.pending, (s) => { s.triggerLoading = true; });
     b.addCase(triggerBuild.fulfilled, (s, a) => { s.builds.unshift(a.payload); s.triggerLoading = false; });
