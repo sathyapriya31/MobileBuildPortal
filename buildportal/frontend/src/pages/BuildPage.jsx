@@ -231,8 +231,6 @@ export default function BuildPage() {
       }}>
         {/* Left Side: Breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#475569', ...Fonts.Medium }}>
-          <span>Pipelines</span>
-          <span style={{ color: '#94a3b8' }}>&rsaquo;</span>
           <span style={{ color: '#00388d', ...Fonts.Bold }}>New Configuration</span>
         </div>
 
@@ -339,9 +337,7 @@ export default function BuildPage() {
                             <span style={{ fontSize: '14px', ...Fonts.Bold, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {r.name}
                             </span>
-                            <span style={{ fontSize: '11px', color: '#5f6368' }}>
-                              {getRelativeTime(r.updatedAt)}
-                            </span>
+                            <div style={styles.repoMeta}>{r.private ? '🔒 Private' : '🌐 Public'} · {r.fullName}</div>
                           </div>
                           {isSelected && (
                             <div style={{ position: 'absolute', top: '12px', right: '12px', width: '18px', height: '18px', borderRadius: '50%', backgroundColor: '#0c5df4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -937,6 +933,7 @@ function getStyles() {
     ksForm: { display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' },
     fileLabel: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-3)', border: `2px dashed ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.textMuted, fontSize: 'var(--text-sm)', cursor: 'pointer' },
     input: { padding: 'var(--space-2) var(--space-3)', background: Colors.surface2, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.text, fontSize: 'var(--text-sm)' },
-    uploadBtn: { padding: 'var(--space-2) var(--space-4)', background: Colors.surface3, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.text, fontSize: 'var(--text-sm)', ...Fonts.SemiBold, cursor: 'pointer' }
+    uploadBtn: { padding: 'var(--space-2) var(--space-4)', background: Colors.surface3, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.text, fontSize: 'var(--text-sm)', ...Fonts.SemiBold, cursor: 'pointer' },
+    repoMeta: { fontSize: '11px', color: '#5f6368', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
   };
 }
