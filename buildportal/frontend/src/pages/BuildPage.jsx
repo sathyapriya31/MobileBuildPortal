@@ -6,7 +6,26 @@ import { triggerBuild } from '../store/slices/buildsSlice.js';
 import { api } from '../services/api.js';
 import Colors from '../config/colors.js';
 import Fonts from '../config/fonts.js';
-import { Bell, HelpCircle } from 'lucide-react';
+import { Bell, HelpCircle, Folder, Search, Check, ChevronDown, GitBranch, Link as LinkIcon, Upload, Sliders, Smartphone } from 'lucide-react';
+
+const getRelativeTime = (dateString) => {
+  if (!dateString) return 'Last commit recent';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  if (isNaN(diffMs)) return 'Last commit recent';
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 60) {
+    return `Last commit ${Math.max(1, diffMins)}m ago`;
+  } else if (diffHours < 24) {
+    return `Last commit ${diffHours}h ago`;
+  } else {
+    return `Last commit ${diffDays}d ago`;
+  }
+};
 
 const AndroidIcon = ({ size = 24, ...props }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -37,6 +56,7 @@ export default function BuildPage() {
   const [androidFormat, setAndroidFormat] = useState('apk');
   const [search, setSearch] = useState('');
   const [keystoreStatus, setKeystoreStatus] = useState(null);
+  const [isReplacingKeystore, setIsReplacingKeystore] = useState(false);
   const [keystoreFile, setKeystoreFile] = useState(null);
   const [keystoreAlias, setKeystoreAlias] = useState('');
   const [keystorePass, setKeystorePass] = useState('');
@@ -45,10 +65,13 @@ export default function BuildPage() {
   const [keystoreMode, setKeystoreMode] = useState('upload'); // 'upload' or 'generate'
   const [versionName, setVersionName] = useState('1.0.0');
   const [buildType, setBuildType] = useState('testing');
+  const [releaseNotes, setReleaseNotes] = useState('');
+  const [versionCode, setVersionCode] = useState('');
   const [appleKeyFile, setAppleKeyFile] = useState(null);
   const [appleKeyId, setAppleKeyId] = useState('');
   const [appleIssuerId, setAppleIssuerId] = useState('');
   const [appleCredsStatus, setAppleCredsStatus] = useState(null);
+  const [isReplacingApple, setIsReplacingApple] = useState(false);
   const [uploadingApple, setUploadingApple] = useState(false);
 
   useEffect(() => {
@@ -62,10 +85,12 @@ export default function BuildPage() {
       // Check keystore
       api.get(`/keystores/${selectedRepo.id}`).then(({ data }) => {
         setKeystoreStatus(data.keystore);
+        setIsReplacingKeystore(false);
       });
       // Check Apple credentials
       api.get(`/apple-credentials/${selectedRepo.id}`).then(({ data }) => {
         setAppleCredsStatus(data.credentials);
+        setIsReplacingApple(false);
       });
     }
   }, [selectedRepo]);
@@ -96,8 +121,12 @@ export default function BuildPage() {
       try {
         const { data } = await api.post('/keystores', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
         setKeystoreStatus(data.keystore);
+        setIsReplacingKeystore(false);
         toast.success('Keystore uploaded successfully!');
         setKeystoreFile(null);
+        setKeystoreAlias('');
+        setKeystorePass('');
+        setKeyPass('');
       } catch (err) {
         toast.error(err.response?.data?.error || 'Upload failed');
       } finally {
@@ -118,7 +147,11 @@ export default function BuildPage() {
           keyPassword: keyPass
         });
         setKeystoreStatus(data.keystore);
+        setIsReplacingKeystore(false);
         toast.success('Keystore generated dynamically! ⚡');
+        setKeystoreAlias('');
+        setKeystorePass('');
+        setKeyPass('');
       } catch (err) {
         toast.error(err.response?.data?.error || 'Generation failed');
       } finally {
@@ -141,8 +174,11 @@ export default function BuildPage() {
     try {
       const { data } = await api.post('/apple-credentials', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setAppleCredsStatus(data.credentials);
+      setIsReplacingApple(false);
       toast.success('App Store Connect credentials saved successfully! 🍎');
       setAppleKeyFile(null);
+      setAppleKeyId('');
+      setAppleIssuerId('');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to save credentials');
     } finally {
@@ -152,6 +188,9 @@ export default function BuildPage() {
 
   const handleBuild = async () => {
     if (!selectedRepo || !branch) return toast.error('Select a repo and branch');
+    if (platform === 'android' && buildType === 'playstore' && !versionCode) return toast.error('Enter a version code for Play Store builds');
+    
+    const isAndroidPlaystore = platform === 'android' && buildType === 'playstore';
     const result = await dispatch(triggerBuild({
       projectId: selectedRepo.id,
       projectName: selectedRepo.name,
@@ -160,8 +199,10 @@ export default function BuildPage() {
       branch,
       platform,
       androidFormat: (platform === 'android' || platform === 'both') ? androidFormat : undefined,
-      versionName,
+      versionName: isAndroidPlaystore ? versionName : undefined,
       buildType,
+      releaseNotes: isAndroidPlaystore ? releaseNotes : undefined,
+      versionCode: isAndroidPlaystore ? versionCode : undefined,
     }));
     if (triggerBuild.fulfilled.match(result)) {
       toast.success('Build queued! 🚀');
@@ -176,7 +217,7 @@ export default function BuildPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: Colors.bg, ...Fonts.Regular }}>
-      
+
       {/* ── Top Header Bar ── */}
       <div style={{
         display: 'flex',
@@ -209,288 +250,693 @@ export default function BuildPage() {
       </div>
 
       {/* ── Page Content Container ── */}
-      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
-        <div style={styles.page} className="page-build">
-          <header className="page-header" style={{ marginBottom: '16px' }}>
-            <h1 style={styles.title} className="text-lg md:text-xl">New Build</h1>
-            <p style={styles.subtitle}>Select your project, branch, and platform to trigger a build via <strong>GitHub Actions</strong>.</p>
-          </header>
+      <div style={{ padding: '8px 20px', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, overflowY: 'auto' }}>
+        <div style={{ maxWidth: '1200px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
-      <div className="grid-build">
-        {/* Step 1 – Repo */}
-        <section style={styles.card} className="card-build">
-          <div style={styles.stepLabel}><span style={styles.stepNum}>1</span> Select Repository</div>
-          <input style={styles.searchInput} placeholder="Search repositories..." value={search}
-            onChange={e => setSearch(e.target.value)} />
-          <div style={styles.repoList}>
-            {loading ? <SkeletonList /> : repos.map(r => (
-              <button key={r.id} style={{ ...styles.repoItem, ...(selectedRepo?.id === r.id ? styles.repoActive : {}) }}
-                onClick={() => handleRepoSelect(r)}>
-                <div style={styles.repoName}>{r.name}</div>
-                <div style={styles.repoMeta}>{r.private ? '🔒 Private' : '🌐 Public'} · {r.fullName}</div>
-              </button>
-            ))}
-            {!loading && repos.length === 0 && <p style={styles.empty}>No repositories found</p>}
+          {/* Header */}
+          <div>
+            <h1 style={{ fontSize: '24px', ...Fonts.Bold, color: '#1e293b', margin: '0 0 4px 0' }}>Configure New Build</h1>
+            <p style={{ fontSize: '14px', color: '#5f6368', lineHeight: '1.5', margin: 0 }}>
+              Set up your build parameters. Select your source code repository, define the target environment, and choose your platform options.
+            </p>
           </div>
-        </section>
 
-        {/* Step 2 – Branch + Platform */}
-        <div style={styles.rightCol}>
-          <section style={styles.card} className="card-build">
-            <div style={styles.stepLabel}><span style={styles.stepNum}>2</span> Branch</div>
-            {branchesLoading ? <div style={styles.skeletonBar} /> : (
-              <select style={styles.select} value={branch} onChange={e => setBranch(e.target.value)} disabled={!selectedRepo}>
-                {branches.map(b => <option key={b.sha} value={b.name}>{b.name}</option>)}
-                {!selectedRepo && <option>Select a repo first</option>}
-              </select>
-            )}
-          </section>
+          {/* Grid Layout (Step 1 on Left, Steps 2 & 3 on Right) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: '16px', alignItems: 'stretch' }}>
 
-          <section style={styles.card} className="card-build">
-            <div style={styles.stepLabel}><span style={styles.stepNum}>3</span> Platform</div>
-            <div className="platform-grid-build">
-              {PLATFORMS.map(p => {
-                const isAndroid = p.id === 'android';
-                const isIos = p.id === 'ios';
-                const isBoth = p.id === 'both';
-                return (
-                  <button key={p.id} style={{ ...styles.platformBtn, ...(platform === p.id ? { ...styles.platformActive, border: '1px solid ' + p.color, color: p.color } : {}) }}
-                    className="platform-btn-build"
-                    onClick={() => setPlatform(p.id)}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', height: '32px', color: platform === p.id ? p.color : Colors.textMuted }} className="platform-icon-wrapper-build">
-                      {isAndroid && <AndroidIcon size={28} />}
-                      {isIos && <IosIcon size={28} />}
-                      {isBoth && (
-                        <>
-                          <AndroidIcon size={22} />
-                          <IosIcon size={22} />
-                        </>
-                      )}
+            {/* Left Column Grid Cell - position:relative so absolutely-positioned card doesn't drive row height */}
+            <div style={{ position: 'relative' }}>
+              {/* Left Card - fills exactly the grid cell height (set by right column) */}
+              <div style={{
+                position: 'absolute',
+                top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: '#ffffff',
+                border: '1px solid #dadce0',
+                borderRadius: '12px',
+                padding: '16px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#edf3fe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0c5df4' }}>
+                    <Folder size={20} />
+                  </div>
+                  <h2 style={{ fontSize: '18px', ...Fonts.Bold, color: '#1e293b', margin: 0 }}>1. Select Repository</h2>
+                </div>
+
+                {/* Search Bar */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginBottom: '10px', flexShrink: 0 }}>
+                  <Search size={18} style={{ position: 'absolute', left: '14px', color: '#5f6368' }} />
+                  <input
+                    placeholder="Search repository by name..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: '40px',
+                      backgroundColor: '#f1f3f4',
+                      border: 'none',
+                      borderRadius: '8px',
+                      paddingLeft: '44px',
+                      paddingRight: '16px',
+                      fontSize: '14px',
+                      color: '#1e293b',
+                      outline: 'none',
+                      ...Fonts.Regular
+                    }}
+                  />
+                </div>
+
+                {/* Repo Cards Grid - scrolls within the constrained card height */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '4px', alignContent: 'start' }}>
+                  {loading ? (
+                    <SkeletonList />
+                  ) : (
+                    repos.map(r => {
+                      const isSelected = selectedRepo?.id === r.id;
+                      return (
+                        <button
+                          key={r.id}
+                          onClick={() => handleRepoSelect(r)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            position: 'relative',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: isSelected ? '2px solid #0c5df4' : '1px solid #dadce0',
+                            backgroundColor: '#ffffff',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            width: '100%'
+                          }}
+                        >
+                          <GitBranch size={20} style={{ color: isSelected ? '#0c5df4' : '#5f6368', marginRight: '12px', flexShrink: 0 }} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
+                            <span style={{ fontSize: '14px', ...Fonts.Bold, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {r.name}
+                            </span>
+                            <span style={{ fontSize: '11px', color: '#5f6368' }}>
+                              {getRelativeTime(r.updatedAt)}
+                            </span>
+                          </div>
+                          {isSelected && (
+                            <div style={{ position: 'absolute', top: '12px', right: '12px', width: '18px', height: '18px', borderRadius: '50%', backgroundColor: '#0c5df4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <Check size={11} color="#ffffff" strokeWidth={3} />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                  {!loading && repos.length === 0 && (
+                    <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '32px', color: '#5f6368', fontSize: '14px' }}>
+                      No repositories found
                     </div>
-                    <span>{p.label}</span>
-                  </button>
-                );
-              })}
+                  )}
+                </div>
+              </div>
             </div>
-            {(platform === 'android' || platform === 'both') && (
-              <div style={styles.formatContainer}>
-                <div style={styles.formatLabel}>Android Build Format</div>
-                <div style={styles.formatGrid}>
-                  <button
+
+            {/* Right Column: Step 2 & Step 3 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+              {/* Step 2: Branch */}
+              <div style={{ backgroundColor: '#ffffff', border: '1px solid #dadce0', borderRadius: '12px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#edf3fe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0c5df4' }}>
+                    <GitBranch size={20} />
+                  </div>
+                  <h2 style={{ fontSize: '16px', ...Fonts.Bold, color: '#1e293b', margin: 0 }}>2. Branch</h2>
+                </div>
+
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <select
+                    value={branch}
+                    onChange={e => setBranch(e.target.value)}
+                    disabled={!selectedRepo}
                     style={{
-                      ...styles.formatBtn,
-                      ...(androidFormat === 'apk' ? styles.formatActive : {}),
+                      width: '100%',
+                      height: '40px',
+                      backgroundColor: '#f1f3f4',
+                      border: 'none',
+                      borderRadius: '8px',
+                      paddingLeft: '16px',
+                      paddingRight: '40px',
+                      fontSize: '14px',
+                      color: selectedRepo ? '#1e293b' : '#5f6368',
+                      appearance: 'none',
+                      cursor: selectedRepo ? 'pointer' : 'not-allowed',
+                      outline: 'none',
+                      ...Fonts.Regular
                     }}
-                    onClick={() => setAndroidFormat('apk')}
                   >
-                    📦 APK (Package)
-                  </button>
-                  <button
-                    style={{
-                      ...styles.formatBtn,
-                      ...(androidFormat === 'aab' ? styles.formatActive : {}),
-                    }}
-                    onClick={() => setAndroidFormat('aab')}
-                  >
-                    🎁 AAB (App Bundle)
-                  </button>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* Build Options */}
-          {selectedRepo && (
-            <section style={styles.card} className="card-build">
-              <div style={styles.stepLabel}><span style={styles.stepNum}>4</span> Build Options</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginTop: 'var(--space-2)' }}>
-                <div>
-                  <label style={{ ...styles.formatLabel, marginBottom: '8px', display: 'block' }}>Build Profile / Type</label>
-                  <div style={styles.formatGrid}>
-                    <button
-                      style={{
-                        ...styles.formatBtn,
-                        ...(buildType === 'testing' ? styles.formatActive : {}),
-                        ...(buildType === 'testing' ? { border: '1px solid ' + Colors.primary, color: Colors.primary, background: Colors.primaryBg } : {})
-                      }}
-                      onClick={() => setBuildType('testing')}
-                    >
-                      🧪 Testing
-                    </button>
-                    <button
-                      style={{
-                        ...styles.formatBtn,
-                        ...(buildType === 'uat' ? styles.formatActive : {}),
-                        ...(buildType === 'uat' ? { border: '1px solid ' + Colors.warning, color: Colors.warning, background: Colors.warningBg } : {})
-                      }}
-                      onClick={() => setBuildType('uat')}
-                    >
-                      📋 UAT Release
-                    </button>
-                    <button
-                      style={{
-                        ...styles.formatBtn,
-                        ...(buildType === 'production' ? styles.formatActive : {}),
-                        ...(buildType === 'production' ? { border: '1px solid ' + Colors.success, color: Colors.success, background: Colors.successBg } : {})
-                      }}
-                      onClick={() => setBuildType('production')}
-                    >
-                      🚀 Production Release
-                    </button>
-                  </div>
-                  <p style={{ fontSize: 'var(--text-xs)', color: Colors.textMuted, marginTop: '10px', lineHeight: '1.5' }}>
-                    {buildType === 'testing' && (
-                      <span>🧪 <strong>Testing Profile:</strong> Triggers a <strong>GitHub Actions</strong> workflow on your repository. Builds the APK/AAB in the cloud and streams results back in real-time.</span>
-                    )}
-                    {buildType === 'uat' && (
-                      <span>📋 <strong>UAT Profile:</strong> Compiles a UAT-signed binary, uploads it to S3, and flags it ready for User Acceptance Testing environments.</span>
-                    )}
-                    {buildType === 'production' && (
-                      <span>🚀 <strong>Production Profile:</strong> Compiles a production-ready signed binary and hosts it on AWS S3 for final deployment.</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {/* Keystore */}
-          {selectedRepo && needsKeystore && (
-            <section style={styles.card} className="card-build">
-              <div style={styles.stepLabel}><span style={styles.stepNum}>5</span> Android Keystore</div>
-              {keystoreStatus ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
-                  <div style={styles.ksFound}>
-                    <span>✅ Keystore on file: <strong>{keystoreStatus.filename}</strong></span>
-                    <button style={styles.ksReplace} onClick={() => setKeystoreStatus(null)}>Replace</button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
-                  {/* Keystore Mode Toggle */}
-                  <div style={{ display: 'flex', border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-md)', background: Colors.surface2, padding: '4px', gap: '4px' }}>
-                    <button 
-                      style={{ flex: 1, padding: '8px 12px', border: 'none', borderRadius: 'var(--radius-sm)', background: keystoreMode === 'upload' ? Colors.surface : 'transparent', color: keystoreMode === 'upload' ? Colors.text : Colors.textMuted, fontSize: 'var(--text-xs)', ...Fonts.SemiBold, cursor: 'pointer', transition: 'all var(--transition)' }} 
-                      onClick={() => setKeystoreMode('upload')}>
-                      📂 Upload Keystore
-                    </button>
-                    <button 
-                      style={{ flex: 1, padding: '8px 12px', border: 'none', borderRadius: 'var(--radius-sm)', background: keystoreMode === 'generate' ? Colors.surface : 'transparent', color: keystoreMode === 'generate' ? Colors.text : Colors.textMuted, fontSize: 'var(--text-xs)', ...Fonts.SemiBold, cursor: 'pointer', transition: 'all var(--transition)' }} 
-                      onClick={() => setKeystoreMode('generate')}>
-                      ⚡ Generate New Keystore
-                    </button>
-                  </div>
-
-                  <form onSubmit={e => e.preventDefault()} style={styles.ksForm}>
-                    {keystoreMode === 'upload' ? (
-                      <label style={styles.fileLabel}>
-                        <input type="file" accept=".jks,.keystore" style={{ display: 'none' }}
-                          onChange={e => setKeystoreFile(e.target.files[0])} />
-                        {keystoreFile ? `📎 ${keystoreFile.name}` : '+ Upload .jks / .keystore file'}
-                      </label>
+                    {!selectedRepo && <option value="">Select a repo first</option>}
+                    {branchesLoading ? (
+                      <option value="">Loading branches...</option>
                     ) : (
-                      <div style={{ padding: 'var(--space-3)', border: `1px dashed ${Colors.primary}44`, background: Colors.primaryBg, borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', color: Colors.textMuted, lineHeight: '1.4' }}>
-                        ⚡ <strong>Zero Configuration Generation:</strong> We will execute <code>keytool</code> directly on your host machine to compile and sign your application dynamically.
+                      branches.map(b => (
+                        <option key={b.sha} value={b.name}>
+                          {b.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <ChevronDown size={18} style={{ position: 'absolute', right: '14px', pointerEvents: 'none', color: '#5f6368' }} />
+                </div>
+              </div>
+
+              {/* Step 3: Platform */}
+              <div style={{ backgroundColor: '#ffffff', border: '1px solid #dadce0', borderRadius: '12px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#e6f4ea', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00875a' }}>
+                    <Smartphone size={20} />
+                  </div>
+                  <h2 style={{ fontSize: '16px', ...Fonts.Bold, color: '#1e293b', margin: 0 }}>3. Platform</h2>
+                </div>
+
+                {/* Android / iOS Selection */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                  {/* Android Button */}
+                  <button
+                    onClick={() => {
+                      setPlatform('android');
+                      setBuildType('testing'); // reset to first valid option
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      height: '38px',
+                      borderRadius: '8px',
+                      border: platform === 'android' ? '2px solid #00388d' : '1px solid #dadce0',
+                      backgroundColor: '#ffffff',
+                      color: platform === 'android' ? '#00388d' : '#5f6368',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      ...Fonts.Bold,
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <AndroidIcon size={20} style={{ color: platform === 'android' ? '#00388d' : '#5f6368' }} />
+                    <span>Android</span>
+                  </button>
+
+                  {/* iOS Button */}
+                  <button
+                    onClick={() => {
+                      setPlatform('ios');
+                      setBuildType('testflight'); // iOS only has testflight
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      height: '44px',
+                      borderRadius: '8px',
+                      border: platform === 'ios' ? '2px solid #00388d' : '1px solid #dadce0',
+                      backgroundColor: '#ffffff',
+                      color: platform === 'ios' ? '#00388d' : '#5f6368',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      ...Fonts.Bold,
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <IosIcon size={20} style={{ color: platform === 'ios' ? '#00388d' : '#5f6368' }} />
+                    <span>iOS</span>
+                  </button>
+                </div>
+
+                {/* Build Format (only for Android) */}
+                {platform === 'android' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>ANDROID BUILD FORMAT</span>
+                    {buildType === 'playstore' ? (
+                      // Play Store requires AAB — lock it
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{
+                          height: '36px', borderRadius: '8px', flex: 1,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '13px', ...Fonts.Bold,
+                          border: '1.5px solid #00875a',
+                          backgroundColor: '#ffffff', color: '#00875a'
+                        }}>
+                          AAB
+                        </div>
+                        <span style={{ fontSize: '11px', color: '#5f6368', flex: 2, lineHeight: '1.4' }}>
+                          Play Store requires AAB format.
+                        </span>
+                      </div>
+                    ) : (
+                      // Share via Link — allow APK or AAB
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <button
+                          onClick={() => setAndroidFormat('apk')}
+                          style={{
+                            height: '36px', borderRadius: '8px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', fontSize: '13px', ...Fonts.Bold,
+                            border: androidFormat === 'apk' ? '1.5px solid #00875a' : 'none',
+                            backgroundColor: androidFormat === 'apk' ? '#ffffff' : '#f1f3f4',
+                            color: androidFormat === 'apk' ? '#00875a' : '#5f6368',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          APK
+                        </button>
+                        <button
+                          onClick={() => setAndroidFormat('aab')}
+                          style={{
+                            height: '36px', borderRadius: '8px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', fontSize: '13px', ...Fonts.Bold,
+                            border: androidFormat === 'aab' ? '1.5px solid #00875a' : 'none',
+                            backgroundColor: androidFormat === 'aab' ? '#ffffff' : '#f1f3f4',
+                            color: androidFormat === 'aab' ? '#00875a' : '#5f6368',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          AAB
+                        </button>
                       </div>
                     )}
-                    
-                    <input style={styles.input} placeholder="Key alias" value={keystoreAlias} onChange={e => setKeystoreAlias(e.target.value)} />
-                    <input style={styles.input} type="password" placeholder="Keystore password" value={keystorePass} onChange={e => setKeystorePass(e.target.value)} />
-                    <input style={styles.input} type="password" placeholder="Key password" value={keyPass} onChange={e => setKeyPass(e.target.value)} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
 
-                    <button style={styles.uploadBtn} onClick={handleSaveKeystore} disabled={uploadingKS}>
-                      {uploadingKS 
-                        ? (keystoreMode === 'upload' ? 'Uploading...' : 'Generating...') 
-                        : (keystoreMode === 'upload' ? 'Save Config & Keystore' : 'Generate & Save Keystore')
-                      }
-                    </button>
-                  </form>
+          {/* Full Width Row: Step 4 (Build Options) */}
+          {platform === 'android' && (
+            <div style={{ backgroundColor: '#ffffff', border: '1px solid #dadce0', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#fef7e0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e2a100' }}>
+                  <Sliders size={20} />
                 </div>
-              )}
-            </section>
+                <h2 style={{ fontSize: '18px', ...Fonts.Bold, color: '#1e293b', margin: 0 }}>4. Build Options</h2>
+              </div>
+
+              {/* Build Options */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+
+                {/* Android: Share via Link */}
+                <div
+                  onClick={() => setBuildType('testing')}
+                  style={{
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '16px',
+                    padding: '20px',
+                    borderRadius: '8px',
+                    border: buildType === 'testing' ? '2px solid #00875a' : '1px solid #dadce0',
+                    backgroundColor: '#ffffff',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{
+                    width: '36px', height: '36px', borderRadius: '8px',
+                    backgroundColor: buildType === 'testing' ? '#e6f4ea' : '#f1f3f4',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: buildType === 'testing' ? '#00875a' : '#5f6368', flexShrink: 0
+                  }}>
+                    <LinkIcon size={20} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '24px' }}>
+                    <span style={{ fontSize: '15px', ...Fonts.Bold, color: '#1e293b' }}>Share via Link</span>
+                    <span style={{ fontSize: '12px', color: '#5f6368', lineHeight: '1.4' }}>
+                      Generate a downloadable APK/AAB link for manual installation.
+                    </span>
+                  </div>
+                  {buildType === 'testing' ? (
+                    <div style={{ position: 'absolute', top: '20px', right: '20px', width: '18px', height: '18px', borderRadius: '50%', backgroundColor: '#00875a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Check size={11} color="#ffffff" strokeWidth={3} />
+                    </div>
+                  ) : (
+                    <div style={{ position: 'absolute', top: '20px', right: '20px', width: '18px', height: '18px', borderRadius: '50%', border: '1.5px solid #dadce0' }} />
+                  )}
+                </div>
+
+                {/* Android: Play Store Internal Testing */}
+                <div
+                  onClick={() => {
+                    setBuildType('playstore');
+                    setAndroidFormat('aab'); // Play Store requires AAB
+                  }}
+                  style={{
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '16px',
+                    padding: '20px',
+                    borderRadius: '8px',
+                    border: buildType === 'playstore' ? '2px solid #00875a' : '1px solid #dadce0',
+                    backgroundColor: '#ffffff',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{
+                    width: '36px', height: '36px', borderRadius: '8px',
+                    backgroundColor: buildType === 'playstore' ? '#e6f4ea' : '#f1f3f4',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: buildType === 'playstore' ? '#00875a' : '#5f6368',
+                    flexShrink: 0
+                  }}>
+                    <Upload size={20} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '24px' }}>
+                    <span style={{ fontSize: '15px', ...Fonts.Bold, color: '#1e293b' }}>
+                      Play Store Internal Testing
+                    </span>
+                    <span style={{ fontSize: '12px', color: '#5f6368', lineHeight: '1.4' }}>
+                      Upload directly to Google Play internal testing track.
+                    </span>
+                  </div>
+                  {buildType === 'playstore' ? (
+                    <div style={{ position: 'absolute', top: '20px', right: '20px', width: '18px', height: '18px', borderRadius: '50%', backgroundColor: '#00875a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Check size={11} color="#ffffff" strokeWidth={3} />
+                    </div>
+                  ) : (
+                    <div style={{ position: 'absolute', top: '20px', right: '20px', width: '18px', height: '18px', borderRadius: '50%', border: '1.5px solid #dadce0' }} />
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
-          {/* iOS Credentials */}
-          {selectedRepo && needsAppleCreds && (
-            <section style={styles.card} className="card-build">
-              <div style={styles.stepLabel}><span style={styles.stepNum}>5</span> App Store Connect Credentials</div>
-              {appleCredsStatus ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
-                  <div style={styles.ksFound}>
-                    <span>✅ Credentials on file: Key ID <strong>{appleCredsStatus.apiKeyId}</strong> ({appleCredsStatus.filename})</span>
-                    <button style={styles.ksReplace} onClick={() => setAppleCredsStatus(null)}>Replace</button>
+          {/* Android Configuration — single card with two columns inside */}
+          {selectedRepo && platform === 'android' && (
+            <div style={{ backgroundColor: '#ffffff', border: '1px solid #dadce0', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', marginBottom: '24px' }}>
+
+              {/* Card header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#e6f4ea', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00875a' }}>
+                  <Sliders size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', ...Fonts.Bold, color: '#1e293b', margin: 0 }}>Android Configuration</h3>
+                  <p style={{ fontSize: '12px', color: '#5f6368', margin: 0 }}>Keystore signing{buildType === 'playstore' ? ' and Play Store metadata.' : ' for your build.'}</p>
+                </div>
+              </div>
+
+              {/* Inner 2-column layout */}
+              <div style={{ display: 'grid', gridTemplateColumns: buildType === 'playstore' ? '1fr 1px 1fr' : '1fr', gap: '0', alignItems: 'start' }}>
+
+                {/* Left column: Play Store Config — only when playstore */}
+                {buildType === 'playstore' && (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingRight: '24px' }}>
+                      <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.4px' }}>PLAY STORE CONFIG</span>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>VERSION NAME</span>
+                          <input type="text" placeholder="e.g. 1.0.0" value={versionName} onChange={e => setVersionName(e.target.value)}
+                            style={{ height: '40px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px', padding: '0 12px', fontSize: '13px', color: '#1e293b', outline: 'none', ...Fonts.Regular }} />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>VERSION CODE</span>
+                          <input type="number" placeholder="e.g. 101" value={versionCode} onChange={e => setVersionCode(e.target.value)} min="1"
+                            style={{ height: '40px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px', padding: '0 12px', fontSize: '13px', color: '#1e293b', outline: 'none', width: '100%', boxSizing: 'border-box', ...Fonts.Regular }} />
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>RELEASE NOTES</span>
+                        <textarea placeholder="Describe what's new in this build..." value={releaseNotes} onChange={e => setReleaseNotes(e.target.value)}
+                          style={{ height: '80px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px', padding: '10px 12px', fontSize: '13px', color: '#1e293b', resize: 'none', outline: 'none', ...Fonts.Regular }} />
+                      </div>
+                    </div>
+
+                    {/* Vertical divider */}
+                    <div style={{ backgroundColor: '#dadce0', width: '1px', alignSelf: 'stretch' }} />
+                  </>
+                )}
+
+                {/* Right column: Keystore */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingLeft: buildType === 'playstore' ? '24px' : '0' }}>
+                  <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.4px' }}>KEYSTORE SIGNING</span>
+
+                  {keystoreStatus && !isReplacingKeystore ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', maxWidth: buildType === 'playstore' ? 'none' : '500px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontSize: '13px', ...Fonts.Bold, color: '#15803d' }}>✅ Keystore on file</span>
+                        <span style={{ fontSize: '12px', color: '#5f6368' }}>
+                          Alias: <strong>{keystoreStatus.keystoreAlias}</strong> &nbsp;·&nbsp; File: <strong>{keystoreStatus.filename}</strong>
+                        </span>
+                      </div>
+                      <button style={{ fontSize: '12px', color: '#5f6368', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}
+                        onClick={() => setIsReplacingKeystore(true)}>Replace</button>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxWidth: buildType === 'playstore' ? 'none' : '400px' }}>
+                        <button onClick={() => setKeystoreMode('upload')} style={{ height: '36px', borderRadius: '8px', fontSize: '12px', ...Fonts.Bold, cursor: 'pointer', border: keystoreMode === 'upload' ? '1.5px solid #00875a' : '1px solid #dadce0', backgroundColor: keystoreMode === 'upload' ? '#f0fdf4' : '#f1f3f4', color: keystoreMode === 'upload' ? '#00875a' : '#5f6368' }}>Upload Keystore</button>
+                        <button onClick={() => setKeystoreMode('generate')} style={{ height: '36px', borderRadius: '8px', fontSize: '12px', ...Fonts.Bold, cursor: 'pointer', border: keystoreMode === 'generate' ? '1.5px solid #00875a' : '1px solid #dadce0', backgroundColor: keystoreMode === 'generate' ? '#f0fdf4' : '#f1f3f4', color: keystoreMode === 'generate' ? '#00875a' : '#5f6368' }}>Auto-Generate</button>
+                      </div>
+
+                      {keystoreMode === 'upload' && (
+                        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px', border: '2px dashed #dadce0', borderRadius: '8px', color: '#5f6368', fontSize: '13px', cursor: 'pointer', maxWidth: buildType === 'playstore' ? 'none' : '400px' }}>
+                          <input type="file" accept=".jks,.keystore" style={{ display: 'none' }} onChange={e => setKeystoreFile(e.target.files[0])} />
+                          {keystoreFile ? `📎 ${keystoreFile.name}` : '+ Upload .jks / .keystore file'}
+                        </label>
+                      )}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: buildType === 'playstore' ? '1fr' : '1fr 1fr 1fr', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>KEY ALIAS</span>
+                          <input placeholder="e.g. my-key-alias" value={keystoreAlias} onChange={e => setKeystoreAlias(e.target.value)} style={{ height: '40px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px', padding: '0 12px', fontSize: '13px', color: '#1e293b', outline: 'none', ...Fonts.Regular }} />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>KEYSTORE PASSWORD</span>
+                          <input type="password" placeholder="Keystore password" value={keystorePass} onChange={e => setKeystorePass(e.target.value)} style={{ height: '40px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px', padding: '0 12px', fontSize: '13px', color: '#1e293b', outline: 'none', ...Fonts.Regular }} />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>KEY PASSWORD</span>
+                          <input type="password" placeholder="Key password" value={keyPass} onChange={e => setKeyPass(e.target.value)} style={{ height: '40px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px', padding: '0 12px', fontSize: '13px', color: '#1e293b', outline: 'none', ...Fonts.Regular }} />
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                        {isReplacingKeystore && (
+                          <button
+                            onClick={() => {
+                              setIsReplacingKeystore(false);
+                              setKeystoreFile(null);
+                              setKeystoreAlias('');
+                              setKeystorePass('');
+                              setKeyPass('');
+                            }}
+                            style={{
+                              height: '36px',
+                              padding: '0 20px',
+                              borderRadius: '8px',
+                              backgroundColor: '#f1f3f4',
+                              color: '#5f6368',
+                              border: '1px solid #dadce0',
+                              fontSize: '13px',
+                              ...Fonts.Bold,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        <button onClick={handleSaveKeystore} disabled={uploadingKS} style={{ height: '36px', padding: '0 20px', borderRadius: '8px', backgroundColor: '#00875a', color: '#ffffff', border: 'none', fontSize: '13px', ...Fonts.Bold, cursor: uploadingKS ? 'not-allowed' : 'pointer', opacity: uploadingKS ? 0.7 : 1 }}>
+                          {uploadingKS ? 'Saving...' : (keystoreMode === 'upload' ? 'Save Keystore' : 'Generate Keystore')}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* iOS Configuration — single card with two columns inside */}
+          {selectedRepo && platform === 'ios' && (
+            <div style={{ backgroundColor: '#ffffff', border: '1px solid #dadce0', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', marginBottom: '24px' }}>
+
+              {/* Card header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#edf3fe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0c5df4' }}>
+                  <Sliders size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', ...Fonts.Bold, color: '#1e293b', margin: 0 }}>iOS Configuration</h3>
+                  <p style={{ fontSize: '12px', color: '#5f6368', margin: 0 }}>Build distribution and App Store Connect credentials.</p>
+                </div>
+              </div>
+
+              {/* Inner 2-column layout */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr', gap: '0', alignItems: 'start' }}>
+
+                {/* Left column: Build Options (TestFlight only for iOS) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingRight: '24px' }}>
+                  <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.4px' }}>BUILD OPTIONS</span>
+                  
+                  {/* TestFlight Button */}
+                  <div
+                    style={{
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '16px',
+                      padding: '20px',
+                      borderRadius: '8px',
+                      border: '2px solid #00875a',
+                      backgroundColor: '#ffffff',
+                      cursor: 'default',
+                    }}
+                  >
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '8px',
+                      backgroundColor: '#e6f4ea',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#00875a',
+                      flexShrink: 0
+                    }}>
+                      <Upload size={20} />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '24px' }}>
+                      <span style={{ fontSize: '15px', ...Fonts.Bold, color: '#1e293b' }}>TestFlight</span>
+                      <span style={{ fontSize: '12px', color: '#5f6368', lineHeight: '1.4' }}>
+                        Upload directly to Apple TestFlight for beta distribution.
+                      </span>
+                    </div>
+                    <div style={{ position: 'absolute', top: '20px', right: '20px', width: '18px', height: '18px', borderRadius: '50%', backgroundColor: '#00875a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Check size={11} color="#ffffff" strokeWidth={3} />
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <form onSubmit={e => e.preventDefault()} style={styles.ksForm}>
-                  <label style={styles.fileLabel}>
-                    <input type="file" accept=".p8" style={{ display: 'none' }}
-                      onChange={e => setAppleKeyFile(e.target.files[0])} />
-                    {appleKeyFile ? `📎 ${appleKeyFile.name}` : '+ Upload AuthKey_xxx.p8 key file'}
-                  </label>
-                  <input style={styles.input} placeholder="Apple API Key ID (e.g. 2GZN4HH9K8)" value={appleKeyId} onChange={e => setAppleKeyId(e.target.value)} />
-                  <input style={styles.input} placeholder="Apple API Issuer ID" value={appleIssuerId} onChange={e => setAppleIssuerId(e.target.value)} />
 
-                  <button style={styles.uploadBtn} onClick={handleSaveAppleCredentials} disabled={uploadingApple}>
-                    {uploadingApple ? 'Saving...' : 'Save iOS Credentials'}
-                  </button>
-                </form>
-              )}
-            </section>
+                {/* Vertical divider */}
+                <div style={{ backgroundColor: '#dadce0', width: '1px', alignSelf: 'stretch' }} />
+
+                {/* Right column: App Store Connect Credentials */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingLeft: '24px' }}>
+                  <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.4px' }}>APP STORE CONNECT CREDENTIALS</span>
+
+                  {appleCredsStatus && !isReplacingApple ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontSize: '13px', ...Fonts.Bold, color: '#15803d' }}>✅ Credentials on file</span>
+                        <span style={{ fontSize: '12px', color: '#5f6368' }}>
+                          Key ID: <strong>{appleCredsStatus.apiKeyId}</strong> &nbsp;·&nbsp; File: <strong>{appleCredsStatus.filename}</strong>
+                        </span>
+                      </div>
+                      <button style={{ fontSize: '12px', color: '#5f6368', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}
+                        onClick={() => setIsReplacingApple(true)}>Replace</button>
+                    </div>
+                  ) : (
+                    <>
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px', border: '2px dashed #dadce0', borderRadius: '8px', color: '#5f6368', fontSize: '13px', cursor: 'pointer' }}>
+                        <input type="file" accept=".p8" style={{ display: 'none' }} onChange={e => setAppleKeyFile(e.target.files[0])} />
+                        {appleKeyFile ? `📎 ${appleKeyFile.name}` : '+ Upload AuthKey_xxx.p8 key file'}
+                      </label>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>APPLE API KEY ID</span>
+                          <input placeholder="e.g. 2GZN4HH9K8" value={appleKeyId} onChange={e => setAppleKeyId(e.target.value)}
+                            style={{ height: '40px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px', padding: '0 12px', fontSize: '13px', color: '#1e293b', outline: 'none', ...Fonts.Regular }} />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>APPLE API ISSUER ID</span>
+                          <input placeholder="e.g. Issuer ID" value={appleIssuerId} onChange={e => setAppleIssuerId(e.target.value)}
+                            style={{ height: '40px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px', padding: '0 12px', fontSize: '13px', color: '#1e293b', outline: 'none', ...Fonts.Regular }} />
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                        {isReplacingApple && (
+                          <button
+                            onClick={() => {
+                              setIsReplacingApple(false);
+                              setAppleKeyFile(null);
+                              setAppleKeyId('');
+                              setAppleIssuerId('');
+                            }}
+                            style={{
+                              height: '36px',
+                              padding: '0 20px',
+                              borderRadius: '8px',
+                              backgroundColor: '#f1f3f4',
+                              color: '#5f6368',
+                              border: '1px solid #dadce0',
+                              fontSize: '13px',
+                              ...Fonts.Bold,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        <button onClick={handleSaveAppleCredentials} disabled={uploadingApple} style={{ height: '36px', padding: '0 20px', borderRadius: '8px', backgroundColor: '#00875a', color: '#ffffff', border: 'none', fontSize: '13px', ...Fonts.Bold, cursor: uploadingApple ? 'not-allowed' : 'pointer', opacity: uploadingApple ? 0.7 : 1 }}>
+                          {uploadingApple ? 'Saving...' : 'Save Credentials'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+              </div>
+            </div>
           )}
 
-          {/* Build Button */}
-          <button style={{ ...styles.buildBtn, ...(triggerLoading ? styles.buildBtnLoading : {}) }}
-            className="build-btn-build"
-            onClick={handleBuild} disabled={!selectedRepo || !branch || triggerLoading}>
-            {triggerLoading ? '⏳ Queuing Build...' : '⚡ Trigger Build'}
-          </button>
+          {/* Trigger Build Button */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px', marginBottom: '32px' }}>
+            <button
+              onClick={handleBuild}
+              disabled={!selectedRepo || !branch || (platform === 'android' && buildType === 'playstore' && !versionCode) || triggerLoading}
+              style={{
+                backgroundColor: (triggerLoading || !selectedRepo || !branch || (platform === 'android' && buildType === 'playstore' && !versionCode)) ? '#80b89e' : Colors.mockupTriggerBtn,
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '10px 36px',
+                fontSize: '16px',
+                ...Fonts.Bold,
+                cursor: (triggerLoading || !selectedRepo || !branch || (platform === 'android' && buildType === 'playstore' && !versionCode)) ? 'not-allowed' : 'pointer',
+                transition: 'background-color 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
+            >
+              {triggerLoading ? 'Queuing Build...' : 'Trigger Build'}
+            </button>
+          </div>
+
         </div>
       </div>
-      </div>
-      </div>
-    </div>
+    </div >
   );
 }
 
 function SkeletonList() {
-  return Array.from({ length: 5 }).map((_, i) => (
-    <div key={i} style={{ height: 56, borderRadius: 8, background: Colors.surface2, marginBottom: 8, animation: 'shimmer 1.5s ease infinite', backgroundSize: '200% 100%', backgroundImage: `linear-gradient(90deg, ${Colors.surface2} 25%, ${Colors.surface3} 50%, ${Colors.surface2} 75%)` }} />
+  return Array.from({ length: 4 }).map((_, i) => (
+    <div key={i} style={{ height: 60, borderRadius: 8, background: Colors.surface2, animation: 'shimmer 1.5s ease infinite', backgroundSize: '200% 100%', backgroundImage: `linear-gradient(90deg, ${Colors.surface2} 25%, ${Colors.surface3} 50%, ${Colors.surface2} 75%)` }} />
   ));
 }
 
 function getStyles() {
   return {
-    page: { maxWidth: 1100, margin: '0 auto' },
-    title: { ...Fonts.ExtraBold, color: Colors.text, marginBottom: 'var(--space-2)' },
-    subtitle: { color: Colors.textMuted, fontSize: 'var(--text-sm)' },
-    card: { background: Colors.surface, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-lg)', marginBottom: 'var(--space-4)' },
-    stepLabel: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', ...Fonts.SemiBold, fontSize: 'var(--text-sm)', color: Colors.text, marginBottom: 'var(--space-4)' },
-    stepNum: { width: 24, height: 24, borderRadius: 'var(--radius-full)', background: Colors.primary, color: Colors.white, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', ...Fonts.Bold },
-    searchInput: { width: '100%', padding: 'var(--space-2) var(--space-3)', background: Colors.surface2, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.text, fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)' },
-    repoList: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: 340, overflow: 'auto' },
-    repoItem: { padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: `1px solid ${Colors.border}`, background: Colors.surface2, textAlign: 'left', transition: 'all var(--transition)', width: '100%' },
-    repoActive: { border: '1px solid ' + Colors.primary, background: Colors.primaryBg },
-    repoName: { ...Fonts.SemiBold, fontSize: 'var(--text-sm)', color: Colors.text, marginBottom: 'var(--space-1)' },
-    repoMeta: { fontSize: 'var(--text-xs)', color: Colors.textMuted },
-    empty: { color: Colors.textFaint, fontSize: 'var(--text-sm)', textAlign: 'center', padding: 'var(--space-8)' },
-    rightCol: { display: 'flex', flexDirection: 'column' },
-    select: { width: '100%', padding: 'var(--space-2) var(--space-3)', background: Colors.surface2, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.text, fontSize: 'var(--text-sm)' },
-    skeletonBar: { height: 40, borderRadius: 8, background: Colors.surface2, animation: 'shimmer 1.5s ease infinite' },
-    platformBtn: { display: 'flex', gap: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: `1px solid ${Colors.border}`, background: Colors.surface2, color: Colors.textMuted, fontSize: 'var(--text-sm)', ...Fonts.Medium, transition: 'all var(--transition)' },
-    platformActive: { background: Colors.primaryBg },
-    formatContainer: { marginTop: 'var(--space-4)', paddingTop: 'var(--space-4)', borderTop: `1px solid ${Colors.border}`, animation: 'fadeIn 0.3s ease' },
-    formatLabel: { fontSize: 'var(--text-xs)', ...Fonts.SemiBold, color: Colors.textMuted, marginBottom: 'var(--space-2)', textTransform: 'uppercase', letterSpacing: '0.05em' },
-    formatGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-2)' },
-    formatBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-2)', padding: 'var(--space-2.5) var(--space-4)', borderRadius: 'var(--radius-md)', border: `1px solid ${Colors.border}`, background: Colors.surface2, color: Colors.textMuted, fontSize: 'var(--text-sm)', ...Fonts.Medium, transition: 'all var(--transition)', cursor: 'pointer' },
-    formatActive: { border: '1px solid ' + Colors.android, color: Colors.android, background: Colors.androidBg },
     ksFound: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-3)', background: Colors.successBg, borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', color: Colors.success },
     ksReplace: { fontSize: 'var(--text-xs)', color: Colors.textMuted, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' },
     ksForm: { display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' },
     fileLabel: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-3)', border: `2px dashed ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.textMuted, fontSize: 'var(--text-sm)', cursor: 'pointer' },
     input: { padding: 'var(--space-2) var(--space-3)', background: Colors.surface2, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.text, fontSize: 'var(--text-sm)' },
-    uploadBtn: { padding: 'var(--space-2) var(--space-4)', background: Colors.surface3, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.text, fontSize: 'var(--text-sm)', ...Fonts.SemiBold, cursor: 'pointer' },
-    buildBtn: { padding: 'var(--space-4)', background: Colors.primary, color: Colors.white, borderRadius: 'var(--radius-lg)', fontSize: 'var(--text-base)', ...Fonts.Bold, border: 'none', cursor: 'pointer', textAlign: 'center', marginTop: 'auto', transition: 'all var(--transition)', letterSpacing: '0.02em' },
-    buildBtnLoading: { opacity: 0.7, cursor: 'not-allowed' },
+    uploadBtn: { padding: 'var(--space-2) var(--space-4)', background: Colors.surface3, border: `1px solid ${Colors.border}`, borderRadius: 'var(--radius-md)', color: Colors.text, fontSize: 'var(--text-sm)', ...Fonts.SemiBold, cursor: 'pointer' }
   };
-}
+}

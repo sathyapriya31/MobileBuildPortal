@@ -61,6 +61,19 @@ const Colors = {
   progressEmpty: '#d2e9fc',
   trendGreen: '#16a34a',
   trendRed: '#ef4444',
+
+  // Mockup custom colors
+  mockupBlue: '#0c5df4',
+  mockupBlueBg: '#edf3fe',
+  mockupGreen: '#00875a',
+  mockupGreenBg: '#e6f4ea',
+  mockupYellow: '#e2a100',
+  mockupYellowBg: '#fef7e0',
+  mockupInputBg: '#f1f3f4',
+  mockupInputBorder: '#dadce0',
+  mockupTextTitle: '#1e293b',
+  mockupTextMuted: '#5f6368',
+  mockupTriggerBtn: '#00703c',
 };
 
 export default Colors;
