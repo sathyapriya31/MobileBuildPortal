@@ -166,12 +166,15 @@ a {
 }
 
 /* Custom Responsive Grid and Spacing Utilities */
-.row-keystore {
-  padding: 20px 16px;
+.grid-keystore {
+  display: grid;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+  grid-template-columns: 1fr;
 }
 @media (min-width: 768px) {
-  .row-keystore {
-    padding: 20px 24px;
+  .grid-keystore {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   }
 }
 
@@ -231,12 +234,30 @@ a {
   }
 }
 
+.card-keystore {
+  padding: var(--space-4);
+}
+@media (min-width: 768px) {
+  .card-keystore {
+    padding: var(--space-5);
+  }
+}
+
 .empty-keystore {
   padding: var(--space-8);
 }
 @media (min-width: 768px) {
   .empty-keystore {
     padding: var(--space-16);
+  }
+}
+
+.infobox-keystore {
+  padding: var(--space-4);
+}
+@media (min-width: 768px) {
+  .infobox-keystore {
+    padding: var(--space-6);
   }
 }
 
