@@ -199,7 +199,7 @@ async function processXcodeCloudBuild(build, io) {
 
 /**
  * Dispatches ALL Android builds to GitHub Actions via workflow_dispatch API.
- * Handles testing, UAT, and production build types.
+ * Handles testing, UAT, and playstore build types.
  */
 async function dispatchToGitHubActions(build, io) {
   const buildId = String(build._id);
@@ -342,7 +342,7 @@ export async function setupBuildQueue(io) {
 
     try {
       if (build.platform === 'android') {
-        // ✅ All Android builds → GitHub Actions (testing / UAT / production)
+        // ✅ All Android builds → GitHub Actions (testing / UAT / playstore)
         await dispatchToGitHubActions(build, io);
       } else if (build.platform === 'ios') {
         await processXcodeCloudBuild(build, io);
