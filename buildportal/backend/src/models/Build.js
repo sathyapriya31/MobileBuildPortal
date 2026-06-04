@@ -33,6 +33,7 @@ const buildSchema = new mongoose.Schema({
     ios: { ipaUrl: String, s3Key: String, presignedUrl: String, testFlightLink: String, size: Number },
   },
   slackMessageTs: String,
+  githubRunUrl: String,
   startedAt: Date,
   finishedAt: Date,
   duration: Number,

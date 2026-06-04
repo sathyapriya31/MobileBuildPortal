@@ -50,6 +50,35 @@ const getLogIcon = (message) => {
   return null;
 };
 
+const renderLogMessage = (message, level) => {
+  if (!message) return null;
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = message.split(urlRegex);
+  
+  return parts.map((part, i) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: '#0c5df4',
+            textDecoration: 'underline',
+            fontWeight: 600,
+            wordBreak: 'break-all',
+            cursor: 'pointer'
+          }}
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+};
+
 export default function HistoryPage() {
   const dispatch = useDispatch();
   const { builds, loading, total, metrics } = useSelector(s => s.builds);
@@ -512,6 +541,26 @@ export default function HistoryPage() {
                                   </div>
                                 </div>
                               )}
+                              {build.githubRunUrl && (
+                                <div style={{
+                                  backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1',
+                                  padding: '12px 16px', borderRadius: '8px',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155' }}>
+                                    <span role="img" aria-label="github" style={{ fontSize: 16 }}>🐙</span>
+                                    <span>GitHub Actions workflow execution logs can be monitored directly in real-time.</span>
+                                  </div>
+                                  <a href={build.githubRunUrl} target="_blank" rel="noopener noreferrer" style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    padding: '6px 14px', borderRadius: '6px', backgroundColor: '#0f172a',
+                                    color: '#ffffff', fontSize: 12, fontWeight: 500, transition: 'background-color 0.2s',
+                                    textDecoration: 'none'
+                                  }}>
+                                    View Full Logs
+                                  </a>
+                                </div>
+                              )}
                               <div style={{
                                 backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: 10,
                                 padding: '20px 24px', maxHeight: 320, overflowY: 'auto',
@@ -531,7 +580,7 @@ export default function HistoryPage() {
                                         <div style={{ display: 'flex', gap: 8, color: '#334155' }}>
                                           {icon}
                                           <span style={{ color: log.level === 'error' ? '#e11d48' : log.level === 'warn' ? '#d97706' : undefined, fontWeight: log.level === 'error' || log.level === 'warn' ? 500 : undefined }}>
-                                            {log.message}
+                                            {renderLogMessage(log.message, log.level)}
                                           </span>
                                         </div>
                                       </div>

@@ -218,7 +218,7 @@ router.post('/github-actions/upload', upload.single('file'), async (req, res) =>
  * Body: { secret, buildId, status, s3Key, commitSha, commitMessage, error }
  */
 router.post('/github-actions/callback', async (req, res) => {
-  const { secret, buildId, status, error, commitSha, commitMessage, s3Key } = req.body;
+  const { secret, buildId, status, error, commitSha, commitMessage, s3Key, githubRunUrl } = req.body;
 
   if (secret !== process.env.GITHUB_ACTIONS_CALLBACK_SECRET) {
     return res.status(403).json({ error: 'Forbidden' });
@@ -227,11 +227,31 @@ router.post('/github-actions/callback', async (req, res) => {
   const build = await Build.findById(buildId);
   if (!build) return res.status(404).json({ error: 'Build not found' });
 
+  if (status === 'building') {
+    build.status = 'building';
+    if (githubRunUrl) build.githubRunUrl = githubRunUrl;
+    await build.save();
+
+    // Emit real-time status update to frontend
+    io.to(`build:${buildId}`).emit('build:status', { buildId, status: 'building', githubRunUrl });
+
+    // Emit a log line to frontend console
+    io.to(`build:${buildId}`).emit('build:log', {
+      buildId,
+      level: 'info',
+      message: `🚀 GitHub Actions Workflow started! Run URL: ${githubRunUrl}`,
+      timestamp: new Date(),
+    });
+
+    return res.json({ received: true });
+  }
+
   build.status = status; // 'success' or 'failed'
   build.finishedAt = new Date();
   build.duration = build.startedAt ? Math.floor((new Date() - build.startedAt) / 1000) : 0;
   build.error = error || null;
   build.buildMetadata = { commitSha: commitSha || '', commitMessage: commitMessage || '' };
+  if (githubRunUrl) build.githubRunUrl = githubRunUrl;
 
   // Record the artifact uploaded to S3 by the GitHub Actions runner
   if (status === 'success') {
