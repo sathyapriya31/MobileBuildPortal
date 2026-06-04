@@ -9,12 +9,14 @@ import DashboardLayout from './components/DashboardLayout.jsx';
 import BuildPage from './pages/BuildPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import KeystorePage from './pages/KeystorePage.jsx';
+import AnalyticsPage from './pages/AnalyticsPage.jsx';
 
 function PrivateRoute({ children }) {
   const { user, initialized } = useSelector(s => s.auth);
   if (!initialized) return <div className="app-loading"><span className="spinner" /></div>;
   return user ? children : <Navigate to="/login" replace />;
 }
+
 
 export default function App() {
   const dispatch = useDispatch();
@@ -37,7 +39,8 @@ export default function App() {
         <Route index element={<Navigate to="/build" replace />} />
         <Route path="build" element={<BuildPage />} />
         <Route path="history" element={<HistoryPage />} />
-        <Route path="keystores" element={<KeystorePage />} />
+        <Route path="workspaces" element={<KeystorePage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
       </Route>
     </Routes>
   );

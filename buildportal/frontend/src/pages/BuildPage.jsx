@@ -6,6 +6,7 @@ import { triggerBuild } from '../store/slices/buildsSlice.js';
 import { api } from '../services/api.js';
 import Colors from '../config/colors.js';
 import Fonts from '../config/fonts.js';
+import { upsertWorkspace } from '../utils/workspacesStorage.js';
 
 const AndroidIcon = ({ size = 24, ...props }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -168,6 +169,21 @@ export default function BuildPage() {
     }));
     if (triggerBuild.fulfilled.match(result)) {
       toast.success('Build queued! 🚀');
+      upsertWorkspace({
+        id: String(selectedRepo.id),
+        name: selectedRepo.name,
+        fullName: selectedRepo.fullName,
+        provider: user.provider,
+        platform,
+        selectedBranch: branch,
+        buildFormat: androidFormat,
+        buildType,
+        credentialType: (platform === 'android' || platform === 'both') && keystoreStatus ? 'android-keystore'
+          : (platform === 'ios' || platform === 'both') && appleCredsStatus ? 'ios-credentials'
+          : null,
+        buildTriggeredAt: new Date().toISOString(),
+        workspaceId: result.payload?.id || result.payload?._id || null,
+      });
     } else {
       toast.error(result.payload || 'Failed to trigger build');
     }
