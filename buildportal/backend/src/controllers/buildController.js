@@ -3,7 +3,7 @@ import Keystore from '../models/Keystore.js';
 import { enqueueBuild } from '../services/buildQueue.js';
 import { AppError } from '../middleware/errorHandler.js';
 
-let buildCounter = 1000;
+let buildCounter = 0;
 
 export async function triggerBuild(req, res) {
   const { projectId, projectName, repoUrl, provider, branch, platform, androidFormat, versionName, buildType, releaseNotes, versionCode } = req.body;
