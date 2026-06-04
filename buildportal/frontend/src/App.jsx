@@ -8,7 +8,9 @@ import AuthCallback from './pages/AuthCallback.jsx';
 import DashboardLayout from './components/DashboardLayout.jsx';
 import BuildPage from './pages/BuildPage.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
-import KeystorePage from './pages/KeystorePage.jsx';
+import WorkspacePage from './pages/WorkspacePage.jsx';
+import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage.jsx';
+import AnalyticsPage from './pages/AnalyticsPage.jsx';
 
 function PrivateRoute({ children }) {
   const { user, initialized } = useSelector(s => s.auth);
@@ -37,7 +39,9 @@ export default function App() {
         <Route index element={<Navigate to="/build" replace />} />
         <Route path="build" element={<BuildPage />} />
         <Route path="history" element={<HistoryPage />} />
-        <Route path="keystores" element={<KeystorePage />} />
+        <Route path="workspaces" element={<WorkspacePage />} />
+        <Route path="workspaces/:workspaceId/settings" element={<WorkspaceSettingsPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
       </Route>
     </Routes>
   );

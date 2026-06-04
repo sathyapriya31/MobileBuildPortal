@@ -12,8 +12,8 @@ import Fonts from '../config/fonts.js';
 const NAV = [
   { to: '/build', label: 'New Build', icon: PlusCircle },
   { to: '/history', label: 'Build History', icon: History },
-  { to: '/keystores', label: 'Connected workspace', icon: Link2 },
-  { to: '#', label: 'Analytical', icon: BarChart2 },
+  { to: '/workspaces', label: 'Connected Workspaces', icon: Link2 },
+  { to: '/analytics', label: 'Analytics', icon: BarChart2 },
 ];
 
 export default function DashboardLayout() {

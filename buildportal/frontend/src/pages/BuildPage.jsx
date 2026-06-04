@@ -7,6 +7,18 @@ import { api } from '../services/api.js';
 import Colors from '../config/colors.js';
 import Fonts from '../config/fonts.js';
 import { Bell, HelpCircle } from 'lucide-react';
+import { BP_WORKSPACES_KEY } from './WorkspacePage.jsx';
+
+function saveWorkspaceToStorage(workspace) {
+  const existing = JSON.parse(localStorage.getItem(BP_WORKSPACES_KEY) || '[]');
+  const idx = existing.findIndex(w => w.id === workspace.id);
+  if (idx !== -1) {
+    existing[idx] = workspace;
+  } else {
+    existing.unshift(workspace);
+  }
+  localStorage.setItem(BP_WORKSPACES_KEY, JSON.stringify(existing));
+}
 
 const AndroidIcon = ({ size = 24, ...props }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -165,6 +177,19 @@ export default function BuildPage() {
     }));
     if (triggerBuild.fulfilled.match(result)) {
       toast.success('Build queued! 🚀');
+      saveWorkspaceToStorage({
+        id: `${selectedRepo.id}_${platform}`,
+        projectId: selectedRepo.id,
+        repoUrl: selectedRepo.cloneUrl,
+        repositoryName: selectedRepo.name,
+        repositoryFullName: selectedRepo.fullName,
+        branch,
+        platform,
+        buildType,
+        androidFormat: (platform === 'android' || platform === 'both') ? androidFormat : undefined,
+        triggeredAt: new Date().toISOString(),
+        lastBuildStatus: 'queued',
+      });
     } else {
       toast.error(result.payload || 'Failed to trigger build');
     }
