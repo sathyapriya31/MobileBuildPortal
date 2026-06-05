@@ -50,11 +50,21 @@ const getLogIcon = (message) => {
   return null;
 };
 
+const getGithubRunUrl = (build) => {
+  if (build.githubRunUrl) return build.githubRunUrl;
+  if (!build.repoUrl) return '';
+  const cleanUrl = build.repoUrl.replace(/\.git$/, '');
+  const parts = cleanUrl.split('/');
+  const repo = parts.pop();
+  const owner = parts.pop();
+  return owner && repo ? `https://github.com/${owner}/${repo}/actions` : '';
+};
+
 const renderLogMessage = (message, level) => {
   if (!message) return null;
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const parts = message.split(urlRegex);
-  
+
   return parts.map((part, i) => {
     if (part.match(urlRegex)) {
       return (
@@ -447,7 +457,14 @@ export default function HistoryPage() {
                         {/* Platform */}
                         <td style={{ padding: '10px 10px' }}>
                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, color: '#3c4043' }}>
-                            <Smartphone size={14} style={{ color: '#5f6368' }} />
+                            {build.platform === 'ios' && <IosIcon size={14} style={{ color: '#5f6368' }} />}
+                            {build.platform === 'android' && <AndroidIcon size={14} style={{ color: '#5f6368' }} />}
+                            {build.platform === 'both' && (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                <AndroidIcon size={14} style={{ color: '#5f6368' }} />
+                                <IosIcon size={14} style={{ color: '#5f6368' }} />
+                              </div>
+                            )}
                             <span>
                               {build.platform === 'ios' ? 'iOS' : build.platform === 'android' ? 'Android' : 'Both'}
                             </span>
@@ -541,7 +558,7 @@ export default function HistoryPage() {
                                   </div>
                                 </div>
                               )}
-                              {build.githubRunUrl && (
+                              {build.provider === 'github' && build.platform !== 'ios' && (
                                 <div style={{
                                   backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1',
                                   padding: '12px 16px', borderRadius: '8px',
@@ -550,6 +567,26 @@ export default function HistoryPage() {
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155' }}>
                                     <span role="img" aria-label="github" style={{ fontSize: 16 }}>🐙</span>
                                     <span>GitHub Actions workflow execution logs can be monitored directly in real-time.</span>
+                                  </div>
+                                  <a href={getGithubRunUrl(build)} target="_blank" rel="noopener noreferrer" style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    padding: '6px 14px', borderRadius: '6px', backgroundColor: '#0f172a',
+                                    color: '#ffffff', fontSize: 12, fontWeight: 500, transition: 'background-color 0.2s',
+                                    textDecoration: 'none'
+                                  }}>
+                                    View Full Logs
+                                  </a>
+                                </div>
+                              )}
+                              {build.platform === 'ios' && build.githubRunUrl && (
+                                <div style={{
+                                  backgroundColor: '#f0f7ff', border: '1px solid #bae6fd',
+                                  padding: '12px 16px', borderRadius: '8px',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#0369a1' }}>
+                                    <span role="img" aria-label="apple" style={{ fontSize: 16 }}>🍎</span>
+                                    <span>Xcode Cloud build runs can be monitored directly on App Store Connect in real-time.</span>
                                   </div>
                                   <a href={build.githubRunUrl} target="_blank" rel="noopener noreferrer" style={{
                                     display: 'inline-flex', alignItems: 'center', gap: 6,

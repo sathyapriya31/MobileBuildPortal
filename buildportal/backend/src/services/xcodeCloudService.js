@@ -234,10 +234,13 @@ export async function triggerXcodeCloudBuild({ repoUrl, branch, config, appleCre
     throw new Error('Failed to trigger Xcode Cloud build run: App Store Connect returned an empty response.');
   }
 
+  const xcodeCloudUrl = `https://appstoreconnect.apple.com/apps/${appId}/xcodecloud/workflows/${workflowId}/runs/${buildRun.id}`;
   await logCallback('info', `🎉 Xcode Cloud Build Run successfully triggered! Build Run ID: ${buildRun.id}`);
   return {
     buildRunId: buildRun.id,
     appId,
+    workflowId,
+    xcodeCloudUrl,
     workflowName: matchedWorkflow.attributes?.name
   };
 }

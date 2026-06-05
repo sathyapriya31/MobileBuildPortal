@@ -26,12 +26,13 @@ const buildsSlice = createSlice({
   initialState: { builds: [], total: 0, loading: false, triggerLoading: false, activeBuild: null, metrics: null },
   reducers: {
     updateBuildStatus(state, action) {
-      const { buildId, status, artifacts, logs } = action.payload;
+      const { buildId, status, artifacts, logs, githubRunUrl } = action.payload;
       const idx = state.builds.findIndex(b => b._id === buildId);
       if (idx !== -1) {
         state.builds[idx].status = status;
         if (artifacts) state.builds[idx].artifacts = artifacts;
         if (logs) state.builds[idx].logs = [...(state.builds[idx].logs || []), ...logs];
+        if (githubRunUrl) state.builds[idx].githubRunUrl = githubRunUrl;
       }
     },
     addBuildLog(state, action) {

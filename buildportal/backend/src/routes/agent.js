@@ -239,7 +239,7 @@ router.post('/github-actions/callback', async (req, res) => {
     io.to(`build:${buildId}`).emit('build:log', {
       buildId,
       level: 'info',
-      message: `🚀 GitHub Actions Workflow started! Run URL: ${githubRunUrl}`,
+      message: `Monitor progress at: ${githubRunUrl}`,
       timestamp: new Date(),
     });
 

@@ -133,6 +133,15 @@ async function processXcodeCloudBuild(build, io) {
       config: parsedConfig,
       appleCreds
     }, logCallback);
+    // Save the Xcode Cloud URL immediately so the user can click it!
+    const freshBuild = await Build.findById(buildId);
+    if (freshBuild) {
+      freshBuild.githubRunUrl = triggerResult.xcodeCloudUrl;
+      await freshBuild.save();
+      io.to(`build:${buildId}`).emit('build:status', { buildId, status: freshBuild.status, githubRunUrl: triggerResult.xcodeCloudUrl });
+    }
+
+    await logCallback('info', `Monitor progress at: ${triggerResult.xcodeCloudUrl}`);
 
     // Step 3: Start polling
     await logCallback('info', 'Started polling Xcode Cloud build run status...');
@@ -230,7 +239,7 @@ async function dispatchToGitHubActions(build, io) {
     const callbackSecret = process.env.GITHUB_ACTIONS_CALLBACK_SECRET;
     const workflowFile = 'buildportal-android.yml';
 
-    await logCallback('info', `🔍 Verifying GitHub Actions workflow file exists: .github/workflows/${workflowFile}`);
+    await logCallback('info', `Verifying GitHub Actions workflow file exists: .github/workflows/${workflowFile}`);
 
     // Check the workflow file exists on the target branch before dispatching
     try {
@@ -244,7 +253,7 @@ async function dispatchToGitHubActions(build, io) {
           },
         }
       );
-      await logCallback('info', `✅ Workflow file found. Dispatching build to GitHub Actions...`);
+      await logCallback('info', `Workflow file found. Dispatching build to GitHub Actions...`);
     } catch (checkErr) {
       if (checkErr.response?.status === 404) {
         throw new Error(
@@ -257,6 +266,15 @@ async function dispatchToGitHubActions(build, io) {
 
     // Check if there is a keystore associated with the user and project
     const ks = await Keystore.findOne({ userId: build.userId._id || build.userId, projectId: build.projectId });
+    let keystoreUrl = '';
+    if (ks && ks.keystoreS3Key) {
+      try {
+        keystoreUrl = await getPresignedUrl(ks.keystoreS3Key, 3600);
+      } catch (err) {
+        await logCallback('warn', `Failed to generate presigned URL for keystore: ${err.message}`);
+      }
+    }
+
     const keystoreInputs = ks ? {
       keystore_exists: 'true',
       keystore_filename: ks.originalFilename,
@@ -306,9 +324,83 @@ async function dispatchToGitHubActions(build, io) {
       throw dispatchErr;
     }
 
-    await logCallback('info', `🚀 GitHub Actions workflow dispatched successfully for ${owner}/${repo} @ ${build.branch}.`);
-    await logCallback('info', `⏳ Waiting for GitHub Actions to run the build and report back...`);
-    await logCallback('info', `🔗 Monitor progress at: https://github.com/${owner}/${repo}/actions`);
+    await logCallback('info', `GitHub Actions workflow dispatched successfully for ${owner}/${repo} @ ${build.branch}.`);
+    await logCallback('info', `Waiting for GitHub Actions to run the build and report back...`);
+
+    // Asynchronously poll GitHub to retrieve the newly created run and job URL immediately
+    // so the user gets a direct link to the logs page right away without waiting for the runner callback.
+    setTimeout(async () => {
+      try {
+        let runUrl = `https://github.com/${owner}/${repo}/actions`;
+        let runFound = false;
+
+        // Try polling a few times with a small delay
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const runsRes = await axios.get(
+            `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/runs?event=workflow_dispatch&per_page=5`,
+            {
+              headers: {
+                Authorization: `token ${user.accessToken}`,
+                Accept: 'application/vnd.github+json',
+                'User-Agent': 'BuildPortal',
+              },
+            }
+          );
+          const runs = runsRes.data.workflow_runs || [];
+          // Find a run on this branch that was created in the last 1 minute
+          const now = new Date();
+          const match = runs.find(r =>
+            r.head_branch === build.branch &&
+            (now - new Date(r.created_at)) < 60000
+          );
+
+          if (match) {
+            runUrl = match.html_url;
+            // Now attempt to fetch the jobs for this run
+            try {
+              const jobsRes = await axios.get(
+                `https://api.github.com/repos/${owner}/${repo}/actions/runs/${match.id}/jobs`,
+                {
+                  headers: {
+                    Authorization: `token ${user.accessToken}`,
+                    Accept: 'application/vnd.github+json',
+                    'User-Agent': 'BuildPortal',
+                  },
+                }
+              );
+              const job = jobsRes.data.jobs?.[0];
+              if (job && job.html_url) {
+                runUrl = job.html_url;
+              }
+            } catch (jobErr) {
+              console.error(`Attempt ${attempt}: Failed to fetch jobs for run ${match.id}:`, jobErr.message);
+            }
+            runFound = true;
+            break;
+          }
+        }
+
+        const freshBuild = await Build.findById(buildId);
+        if (freshBuild) {
+          freshBuild.githubRunUrl = runUrl;
+          await freshBuild.save();
+          io.to(`build:${buildId}`).emit('build:status', { buildId, status: freshBuild.status, githubRunUrl: runUrl });
+          await logCallback('info', `Monitor progress at: ${runUrl}`);
+        }
+      } catch (pollErr) {
+        console.error('Failed to poll GitHub runs for immediate URL resolution:', pollErr.message);
+        // Fallback to standard URL
+        const fallbackUrl = `https://github.com/${owner}/${repo}/actions`;
+        const freshBuild = await Build.findById(buildId);
+        if (freshBuild && !freshBuild.githubRunUrl) {
+          freshBuild.githubRunUrl = fallbackUrl;
+          await freshBuild.save();
+          io.to(`build:${buildId}`).emit('build:status', { buildId, status: freshBuild.status, githubRunUrl: fallbackUrl });
+          await logCallback('info', `Monitor progress at: ${fallbackUrl}`);
+        }
+      }
+    }, 100);
   } catch (err) {
     const errorMsg = `GitHub Actions dispatch failed: ${err.message}`;
     await logCallback('error', errorMsg);
