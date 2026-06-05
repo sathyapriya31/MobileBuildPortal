@@ -2,10 +2,10 @@ import { Router } from 'express';
 import multer from 'multer';
 import { unlinkSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { uploadToS3 } from '../services/s3Service.js';
+import { uploadToS3, getPresignedUrl, getObjectFromS3 } from '../services/s3Service.js';
 import Build from '../models/Build.js';
+import Keystore from '../models/Keystore.js';
 import { notifySlack } from '../services/slackService.js';
-import { getPresignedUrl } from '../services/s3Service.js';
 import { io } from '../server.js';
 
 const router = Router();
@@ -317,5 +317,40 @@ router.post('/github-actions/callback', async (req, res) => {
 
   res.json({ received: true });
 });
+
+/**
+ * GET /api/agent/github-actions/callback/keystore/:buildId
+ * GET /api/agent/github-actions/keystore/:buildId
+ *
+ * Securely streams the Android signing keystore file to the GitHub Actions runner.
+ * Secured with GITHUB_ACTIONS_CALLBACK_SECRET.
+ */
+async function downloadKeystore(req, res) {
+  const { secret } = req.query;
+  const { buildId } = req.params;
+
+  if (secret !== process.env.GITHUB_ACTIONS_CALLBACK_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  try {
+    const build = await Build.findById(buildId);
+    if (!build) return res.status(404).json({ error: 'Build not found' });
+
+    const ks = await Keystore.findOne({ userId: build.userId, projectId: build.projectId });
+    if (!ks) return res.status(404).json({ error: 'Keystore not found' });
+
+    const s3Stream = await getObjectFromS3(ks.keystoreS3Key);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${ks.originalFilename}"`);
+    s3Stream.pipe(res);
+  } catch (err) {
+    console.error('Error streaming keystore:', err);
+    res.status(500).json({ error: `Failed to stream keystore: ${err.message}` });
+  }
+}
+
+router.get('/github-actions/callback/keystore/:buildId', downloadKeystore);
+router.get('/github-actions/keystore/:buildId', downloadKeystore);
 
 export default router;

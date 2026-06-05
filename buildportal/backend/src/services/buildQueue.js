@@ -1,7 +1,7 @@
 import Bull from 'bull';
 import axios from 'axios';
 import Build from '../models/Build.js';
-// import Keystore from '../models/Keystore.js'; // ← Mac Mini: was used to attach keystore to agent payload. Android now uses GitHub Actions.
+import Keystore from '../models/Keystore.js';
 import AppleCredential from '../models/AppleCredential.js';
 import { notifySlack } from './slackService.js';
 import { getPresignedUrl, getObjectFromS3 } from './s3Service.js';
@@ -255,6 +255,18 @@ async function dispatchToGitHubActions(build, io) {
       throw new Error(`Failed to verify workflow file: ${checkErr.message}`);
     }
 
+    // Check if there is a keystore associated with the user and project
+    const ks = await Keystore.findOne({ userId: build.userId._id || build.userId, projectId: build.projectId });
+    const keystoreInputs = ks ? {
+      keystore_exists: 'true',
+      keystore_filename: ks.originalFilename,
+      keystore_alias: ks.keystoreAlias,
+      keystore_password: ks.keystorePassword,
+      keystore_key_password: ks.keyPassword,
+    } : {
+      keystore_exists: 'false',
+    };
+
     // Trigger the workflow via workflow_dispatch
     try {
       await axios.post(
@@ -265,11 +277,12 @@ async function dispatchToGitHubActions(build, io) {
             build_id: buildId,
             version_code: String(build.buildNumber || 1),
             version_name: build.versionName || '1.0.0',
-            build_type: build.buildType || 'testing',
+            build_type: build.buildType === 'release' ? 'uat' : 'testing',
             android_format: build.androidFormat || 'apk',
             release_notes: build.releaseNotes || 'Initial UAT Release',
             callback_url: `${backendUrl}/api/agent/github-actions/callback`,
             callback_secret: callbackSecret,
+            ...keystoreInputs,
           },
         },
         {

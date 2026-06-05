@@ -188,9 +188,9 @@ export default function BuildPage() {
 
   const handleBuild = async () => {
     if (!selectedRepo || !branch) return toast.error('Select a repo and branch');
-    if (platform === 'android' && buildType === 'playstore' && !versionCode) return toast.error('Enter a version code for Play Store builds');
+    if (platform === 'android' && buildType === 'release' && !versionCode) return toast.error('Enter a version code for Play Store builds');
     
-    const isAndroidPlaystore = platform === 'android' && buildType === 'playstore';
+    const isAndroidPlaystore = platform === 'android' && buildType === 'release';
     const result = await dispatch(triggerBuild({
       projectId: selectedRepo.id,
       projectName: selectedRepo.name,
@@ -446,7 +446,7 @@ export default function BuildPage() {
                   <button
                     onClick={() => {
                       setPlatform('ios');
-                      setBuildType('testflight'); // iOS only has testflight
+                      setBuildType('release'); // iOS only has release
                     }}
                     style={{
                       display: 'flex',
@@ -473,7 +473,7 @@ export default function BuildPage() {
                 {platform === 'android' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>ANDROID BUILD FORMAT</span>
-                    {buildType === 'playstore' ? (
+                    {buildType === 'release' ? (
                       // Play Store requires AAB — lock it
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div style={{
@@ -583,7 +583,7 @@ export default function BuildPage() {
                 {/* Android: Play Store Internal Testing */}
                 <div
                   onClick={() => {
-                    setBuildType('playstore');
+                    setBuildType('release');
                     setAndroidFormat('aab'); // Play Store requires AAB
                   }}
                   style={{
@@ -593,7 +593,7 @@ export default function BuildPage() {
                     gap: '16px',
                     padding: '20px',
                     borderRadius: '8px',
-                    border: buildType === 'playstore' ? '2px solid #00875a' : '1px solid #dadce0',
+                    border: buildType === 'release' ? '2px solid #00875a' : '1px solid #dadce0',
                     backgroundColor: '#ffffff',
                     cursor: 'pointer',
                     transition: 'all 0.2s'
@@ -601,9 +601,9 @@ export default function BuildPage() {
                 >
                   <div style={{
                     width: '36px', height: '36px', borderRadius: '8px',
-                    backgroundColor: buildType === 'playstore' ? '#e6f4ea' : '#f1f3f4',
+                    backgroundColor: buildType === 'release' ? '#e6f4ea' : '#f1f3f4',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: buildType === 'playstore' ? '#00875a' : '#5f6368',
+                    color: buildType === 'release' ? '#00875a' : '#5f6368',
                     flexShrink: 0
                   }}>
                     <Upload size={20} />
@@ -616,7 +616,7 @@ export default function BuildPage() {
                       Upload directly to Google Play internal testing track.
                     </span>
                   </div>
-                  {buildType === 'playstore' ? (
+                  {buildType === 'release' ? (
                     <div style={{ position: 'absolute', top: '20px', right: '20px', width: '18px', height: '18px', borderRadius: '50%', backgroundColor: '#00875a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Check size={11} color="#ffffff" strokeWidth={3} />
                     </div>
@@ -639,15 +639,15 @@ export default function BuildPage() {
                 </div>
                 <div>
                   <h3 style={{ fontSize: '16px', ...Fonts.Bold, color: '#1e293b', margin: 0 }}>Android Configuration</h3>
-                  <p style={{ fontSize: '12px', color: '#5f6368', margin: 0 }}>Keystore signing{buildType === 'playstore' ? ' and Play Store metadata.' : ' for your build.'}</p>
+                  <p style={{ fontSize: '12px', color: '#5f6368', margin: 0 }}>Keystore signing{buildType === 'release' ? ' and Play Store metadata.' : ' for your build.'}</p>
                 </div>
               </div>
 
               {/* Inner 2-column layout */}
-              <div style={{ display: 'grid', gridTemplateColumns: buildType === 'playstore' ? '1fr 1px 1fr' : '1fr', gap: '0', alignItems: 'start' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: buildType === 'release' ? '1fr 1px 1fr' : '1fr', gap: '0', alignItems: 'start' }}>
 
-                {/* Left column: Play Store Config — only when playstore */}
-                {buildType === 'playstore' && (
+                {/* Left column: Play Store Config — only when release */}
+                {buildType === 'release' && (
                   <>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingRight: '24px' }}>
                       <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.4px' }}>PLAY STORE CONFIG</span>
@@ -678,11 +678,11 @@ export default function BuildPage() {
                 )}
 
                 {/* Right column: Keystore */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingLeft: buildType === 'playstore' ? '24px' : '0' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingLeft: buildType === 'release' ? '24px' : '0' }}>
                   <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.4px' }}>KEYSTORE SIGNING</span>
 
                   {keystoreStatus && !isReplacingKeystore ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', maxWidth: buildType === 'playstore' ? 'none' : '500px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', maxWidth: buildType === 'release' ? 'none' : '500px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         <span style={{ fontSize: '13px', ...Fonts.Bold, color: '#15803d' }}>✅ Keystore on file</span>
                         <span style={{ fontSize: '12px', color: '#5f6368' }}>
@@ -694,19 +694,19 @@ export default function BuildPage() {
                     </div>
                   ) : (
                     <>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxWidth: buildType === 'playstore' ? 'none' : '400px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxWidth: buildType === 'release' ? 'none' : '400px' }}>
                         <button onClick={() => setKeystoreMode('upload')} style={{ height: '36px', borderRadius: '8px', fontSize: '12px', ...Fonts.Bold, cursor: 'pointer', border: keystoreMode === 'upload' ? '1.5px solid #00875a' : '1px solid #dadce0', backgroundColor: keystoreMode === 'upload' ? '#f0fdf4' : '#f1f3f4', color: keystoreMode === 'upload' ? '#00875a' : '#5f6368' }}>Upload Keystore</button>
                         <button onClick={() => setKeystoreMode('generate')} style={{ height: '36px', borderRadius: '8px', fontSize: '12px', ...Fonts.Bold, cursor: 'pointer', border: keystoreMode === 'generate' ? '1.5px solid #00875a' : '1px solid #dadce0', backgroundColor: keystoreMode === 'generate' ? '#f0fdf4' : '#f1f3f4', color: keystoreMode === 'generate' ? '#00875a' : '#5f6368' }}>Auto-Generate</button>
                       </div>
 
                       {keystoreMode === 'upload' && (
-                        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px', border: '2px dashed #dadce0', borderRadius: '8px', color: '#5f6368', fontSize: '13px', cursor: 'pointer', maxWidth: buildType === 'playstore' ? 'none' : '400px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px', border: '2px dashed #dadce0', borderRadius: '8px', color: '#5f6368', fontSize: '13px', cursor: 'pointer', maxWidth: buildType === 'release' ? 'none' : '400px' }}>
                           <input type="file" accept=".jks,.keystore" style={{ display: 'none' }} onChange={e => setKeystoreFile(e.target.files[0])} />
                           {keystoreFile ? `📎 ${keystoreFile.name}` : '+ Upload .jks / .keystore file'}
                         </label>
                       )}
 
-                      <div style={{ display: 'grid', gridTemplateColumns: buildType === 'playstore' ? '1fr' : '1fr 1fr 1fr', gap: '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: buildType === 'release' ? '1fr' : '1fr 1fr 1fr', gap: '12px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>KEY ALIAS</span>
                           <input placeholder="e.g. my-key-alias" value={keystoreAlias} onChange={e => setKeystoreAlias(e.target.value)} style={{ height: '40px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px', padding: '0 12px', fontSize: '13px', color: '#1e293b', outline: 'none', ...Fonts.Regular }} />
@@ -893,16 +893,16 @@ export default function BuildPage() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px', marginBottom: '32px' }}>
             <button
               onClick={handleBuild}
-              disabled={!selectedRepo || !branch || (platform === 'android' && buildType === 'playstore' && !versionCode) || triggerLoading}
+              disabled={!selectedRepo || !branch || (platform === 'android' && buildType === 'release' && !versionCode) || triggerLoading}
               style={{
-                backgroundColor: (triggerLoading || !selectedRepo || !branch || (platform === 'android' && buildType === 'playstore' && !versionCode)) ? '#80b89e' : Colors.mockupTriggerBtn,
+                backgroundColor: (triggerLoading || !selectedRepo || !branch || (platform === 'android' && buildType === 'release' && !versionCode)) ? '#80b89e' : Colors.mockupTriggerBtn,
                 color: '#ffffff',
                 border: 'none',
                 borderRadius: '8px',
                 padding: '10px 36px',
                 fontSize: '16px',
                 ...Fonts.Bold,
-                cursor: (triggerLoading || !selectedRepo || !branch || (platform === 'android' && buildType === 'playstore' && !versionCode)) ? 'not-allowed' : 'pointer',
+                cursor: (triggerLoading || !selectedRepo || !branch || (platform === 'android' && buildType === 'release' && !versionCode)) ? 'not-allowed' : 'pointer',
                 transition: 'background-color 0.2s',
                 display: 'flex',
                 alignItems: 'center',
