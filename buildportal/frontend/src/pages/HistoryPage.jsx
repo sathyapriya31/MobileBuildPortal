@@ -231,27 +231,43 @@ export default function HistoryPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: Colors.bg, ...Fonts.Regular }}>
+      <style>{`
+        @keyframes pulse-skeleton {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.6; }
+        }
+        .skeleton-pulse {
+          animation: pulse-skeleton 1.5s infinite ease-in-out;
+        }
+      `}</style>
 
       {/* ── Top Header Bar ── */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: '24px',
+        justifyContent: 'space-between',
         backgroundColor: Colors.headerBg,
         borderBottom: '1px solid ' + Colors.headerBorder,
         padding: '16px 32px',
         height: '64px',
         boxSizing: 'border-box'
       }}>
-        <button style={{ background: 'none', border: 'none', color: Colors.headerIcon, cursor: 'pointer', position: 'relative', padding: 0 }}>
-          <Bell size={20} />
-          <span style={{ position: 'absolute', top: 1, right: 1, width: 6, height: 6, backgroundColor: Colors.trendRed, borderRadius: '50%' }} />
-        </button>
-        <button style={{ background: 'none', border: 'none', color: Colors.headerIcon, cursor: 'pointer', padding: 0 }}>
-          <HelpCircle size={20} />
-        </button>
-        {user && <img src={user.avatar} alt={user.name} style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid ' + Colors.headerBorder }} />}
+        {/* Left Side: Breadcrumb */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '18px', color: '#00388d', ...Fonts.Bold }}>
+          <span>Build History</span>
+        </div>
+
+        {/* Right Side: Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          <button style={{ background: 'none', border: 'none', color: Colors.headerIcon, cursor: 'pointer', position: 'relative', padding: 0 }}>
+            <Bell size={20} />
+            <span style={{ position: 'absolute', top: 1, right: 1, width: 6, height: 6, backgroundColor: Colors.trendRed, borderRadius: '50%' }} />
+          </button>
+          <button style={{ background: 'none', border: 'none', color: Colors.headerIcon, cursor: 'pointer', padding: 0 }}>
+            <HelpCircle size={20} />
+          </button>
+          {user && <img src={user.avatar} alt={user.name} style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid ' + Colors.headerBorder }} />}
+        </div>
       </div>
 
       {/* ── Page Content Container ── */}
@@ -261,68 +277,117 @@ export default function HistoryPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
 
           {/* Total Builds */}
-          <div className="metric-card" style={{ backgroundColor: Colors.cardBg, border: '1px solid ' + Colors.cardBorder, borderRadius: 12, padding: '16px 20px', boxShadow: Colors.cardShadow }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: Colors.textMuted, fontFamily: Fonts.Medium.fontFamily, letterSpacing: '0.01em' }}>Total Builds</div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 8 }}>
-              <span style={{ fontSize: 28, color: Colors.metricPrimary, ...Fonts.Bold, lineHeight: 1 }}>
-                {displayTotalBuilds.toLocaleString()}
-              </span>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', fontSize: 10, fontWeight: '600', color: totalBuildsTrend >= 0 ? Colors.trendGreen : Colors.trendRed, fontFamily: Fonts.Regular.fontFamily, lineHeight: 1.2 }}>
-                <span>{totalBuildsTrend >= 0 ? `+${totalBuildsTrend}%` : `${totalBuildsTrend}%`}</span>
-                <span style={{ fontSize: 11, fontWeight: 'bold' }}>{totalBuildsTrend >= 0 ? '↑' : '↓'}</span>
+          {loading && builds.length === 0 ? (
+            <div className="skeleton-pulse" style={{
+              backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12,
+              padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12,
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02)'
+            }}>
+              <div style={{ height: 12, backgroundColor: '#e2e8f0', borderRadius: 4, width: '40%' }} />
+              <div style={{ height: 26, backgroundColor: '#e2e8f0', borderRadius: 4, width: '60%', marginTop: 4 }} />
+            </div>
+          ) : (
+            <div className="metric-card" style={{ backgroundColor: Colors.cardBg, border: '1px solid ' + Colors.cardBorder, borderRadius: 12, padding: '16px 20px', boxShadow: Colors.cardShadow }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: Colors.textMuted, fontFamily: Fonts.Medium.fontFamily, letterSpacing: '0.01em' }}>Total Builds</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 8 }}>
+                <span style={{ fontSize: 28, color: Colors.metricPrimary, ...Fonts.Bold, lineHeight: 1 }}>
+                  {displayTotalBuilds.toLocaleString()}
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', fontSize: 10, fontWeight: '600', color: totalBuildsTrend >= 0 ? Colors.trendGreen : Colors.trendRed, fontFamily: Fonts.Regular.fontFamily, lineHeight: 1.2 }}>
+                  <span>{totalBuildsTrend >= 0 ? `+${totalBuildsTrend}%` : `${totalBuildsTrend}%`}</span>
+                  <span style={{ fontSize: 11, fontWeight: 'bold' }}>{totalBuildsTrend >= 0 ? '↑' : '↓'}</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Success Rate */}
-          <div className="metric-card" style={{ backgroundColor: Colors.cardBg, border: '1px solid ' + Colors.cardBorder, borderRadius: 12, padding: '16px 20px', boxShadow: Colors.cardShadow }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: Colors.textMuted, fontFamily: Fonts.Medium.fontFamily, letterSpacing: '0.01em' }}>Success Rate</div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 8 }}>
-              <span style={{ fontSize: 28, color: Colors.metricSuccess, ...Fonts.Bold, lineHeight: 1 }}>
-                {successRate}%
-              </span>
-              <span style={{ fontSize: 10, fontWeight: '500', color: successRateTrend >= 0 ? Colors.trendGreen : Colors.trendRed, fontFamily: Fonts.Regular.fontFamily, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                {successRateTrend >= 0 ? `+${successRateTrend}%` : `${successRateTrend}%`} <span style={{ fontSize: 11 }}>{successRateTrend >= 0 ? '↑' : '↓'}</span>
-              </span>
+          {loading && builds.length === 0 ? (
+            <div className="skeleton-pulse" style={{
+              backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12,
+              padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12,
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02)'
+            }}>
+              <div style={{ height: 12, backgroundColor: '#e2e8f0', borderRadius: 4, width: '40%' }} />
+              <div style={{ height: 26, backgroundColor: '#e2e8f0', borderRadius: 4, width: '60%', marginTop: 4 }} />
             </div>
-          </div>
+          ) : (
+            <div className="metric-card" style={{ backgroundColor: Colors.cardBg, border: '1px solid ' + Colors.cardBorder, borderRadius: 12, padding: '16px 20px', boxShadow: Colors.cardShadow }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: Colors.textMuted, fontFamily: Fonts.Medium.fontFamily, letterSpacing: '0.01em' }}>Success Rate</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 8 }}>
+                <span style={{ fontSize: 28, color: Colors.metricSuccess, ...Fonts.Bold, lineHeight: 1 }}>
+                  {successRate}%
+                </span>
+                <span style={{ fontSize: 10, fontWeight: '500', color: successRateTrend >= 0 ? Colors.trendGreen : Colors.trendRed, fontFamily: Fonts.Regular.fontFamily, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                  {successRateTrend >= 0 ? `+${successRateTrend}%` : `${successRateTrend}%`} <span style={{ fontSize: 11 }}>{successRateTrend >= 0 ? '↑' : '↓'}</span>
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Avg Duration */}
-          <div className="metric-card" style={{ backgroundColor: Colors.cardBg, border: '1px solid ' + Colors.cardBorder, borderRadius: 12, padding: '16px 20px', boxShadow: Colors.cardShadow }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: Colors.textMuted, fontFamily: Fonts.Medium.fontFamily, letterSpacing: '0.01em' }}>Avg. Duration</div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 8 }}>
-              <span style={{ fontSize: 28, color: Colors.metricSlate, ...Fonts.Bold, lineHeight: 1 }}>
-                {avgM}m {avgS}s
-              </span>
-              <span style={{ fontSize: 10, fontWeight: '600', color: avgDurationTrend <= 0 ? Colors.trendGreen : Colors.trendRed, fontFamily: Fonts.Regular.fontFamily, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                {avgDurationTrend <= 0 ? `${avgDurationTrend}s` : `+${avgDurationTrend}s`} <span style={{ fontSize: 11 }}>{avgDurationTrend <= 0 ? '↓' : '↑'}</span>
-              </span>
+          {loading && builds.length === 0 ? (
+            <div className="skeleton-pulse" style={{
+              backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12,
+              padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12,
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02)'
+            }}>
+              <div style={{ height: 12, backgroundColor: '#e2e8f0', borderRadius: 4, width: '40%' }} />
+              <div style={{ height: 26, backgroundColor: '#e2e8f0', borderRadius: 4, width: '60%', marginTop: 4 }} />
             </div>
-          </div>
+          ) : (
+            <div className="metric-card" style={{ backgroundColor: Colors.cardBg, border: '1px solid ' + Colors.cardBorder, borderRadius: 12, padding: '16px 20px', boxShadow: Colors.cardShadow }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: Colors.textMuted, fontFamily: Fonts.Medium.fontFamily, letterSpacing: '0.01em' }}>Avg. Duration</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 8 }}>
+                <span style={{ fontSize: 28, color: Colors.metricSlate, ...Fonts.Bold, lineHeight: 1 }}>
+                  {avgM}m {avgS}s
+                </span>
+                <span style={{ fontSize: 10, fontWeight: '600', color: avgDurationTrend <= 0 ? Colors.trendGreen : Colors.trendRed, fontFamily: Fonts.Regular.fontFamily, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                  {avgDurationTrend <= 0 ? `${avgDurationTrend}s` : `+${avgDurationTrend}s`} <span style={{ fontSize: 11 }}>{avgDurationTrend <= 0 ? '↓' : '↑'}</span>
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Active Runners */}
-          <div className="metric-card" style={{ backgroundColor: Colors.cardBg, border: '1px solid ' + Colors.cardBorder, borderRadius: 12, padding: '16px 20px', boxShadow: Colors.cardShadow }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: Colors.textMuted, fontFamily: Fonts.Medium.fontFamily, letterSpacing: '0.01em' }}>Active Runners</div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 8 }}>
-              <span style={{ fontSize: 28, color: Colors.metricPrimary, ...Fonts.Bold, lineHeight: 1 }}>
-                {activeRunners}
-              </span>
-              <span style={{ fontSize: 11, color: Colors.sidebarActiveText, fontWeight: '500', fontFamily: Fonts.Regular.fontFamily }}>
-                of 12 capacity
-              </span>
+          {loading && builds.length === 0 ? (
+            <div className="skeleton-pulse" style={{
+              backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12,
+              padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12,
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02)'
+            }}>
+              <div style={{ height: 12, backgroundColor: '#e2e8f0', borderRadius: 4, width: '40%' }} />
+              <div style={{ height: 26, backgroundColor: '#e2e8f0', borderRadius: 4, width: '60%', marginTop: 4 }} />
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                {[1, 2, 3, 4].map(s => (
+                  <div key={s} style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: '#e2e8f0' }} />
+                ))}
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-              {[1, 2, 3, 4].map(seg => (
-                <div key={seg} style={{
-                  flex: 1,
-                  height: 5,
-                  borderRadius: 3,
-                  backgroundColor: seg <= filledSegments ? Colors.progressFilled : Colors.progressEmpty,
-                  transition: 'background-color 0.3s'
-                }} />
-              ))}
+          ) : (
+            <div className="metric-card" style={{ backgroundColor: Colors.cardBg, border: '1px solid ' + Colors.cardBorder, borderRadius: 12, padding: '16px 20px', boxShadow: Colors.cardShadow }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: Colors.textMuted, fontFamily: Fonts.Medium.fontFamily, letterSpacing: '0.01em' }}>Active Runners</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 8 }}>
+                <span style={{ fontSize: 28, color: Colors.metricPrimary, ...Fonts.Bold, lineHeight: 1 }}>
+                  {activeRunners}
+                </span>
+                <span style={{ fontSize: 11, color: Colors.sidebarActiveText, fontWeight: '500', fontFamily: Fonts.Regular.fontFamily }}>
+                  of 12 capacity
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+                {[1, 2, 3, 4].map(seg => (
+                  <div key={seg} style={{
+                    flex: 1,
+                    height: 5,
+                    borderRadius: 3,
+                    backgroundColor: seg <= filledSegments ? Colors.progressFilled : Colors.progressEmpty,
+                    transition: 'background-color 0.3s'
+                  }} />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* ── Connected Filter Bar & Table Container ── */}
@@ -421,217 +486,252 @@ export default function HistoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {builds.map((build) => {
-                  const buildDate = new Date(build.createdAt);
-                  const timeStr = buildDate.toLocaleTimeString(undefined, {
-                    hour: '2-digit', minute: '2-digit', hour12: false
-                  }) + (buildDate.getHours() >= 12 ? ' PM' : ' AM');
-                  const isExpanded = expanded === build._id;
-                  const isActive = ['queued', 'building'].includes(build.status);
+                {loading && builds.length === 0 ? (
+                  [1, 2, 3, 4, 5].map(row => (
+                    <tr key={row} style={{ borderBottom: '1px solid #f1f5f9' }} className="skeleton-pulse">
+                      <td style={{ padding: '12px 10px' }}>
+                        <div style={{ height: 14, backgroundColor: '#e2e8f0', borderRadius: 4, width: '80%' }} />
+                        <div style={{ height: 10, backgroundColor: '#e2e8f0', borderRadius: 4, width: '40%', marginTop: 6 }} />
+                      </td>
+                      <td style={{ padding: '12px 10px' }}>
+                        <div style={{ height: 20, backgroundColor: '#e2e8f0', borderRadius: 4, width: '70%' }} />
+                      </td>
+                      <td style={{ padding: '12px 10px' }}>
+                        <div style={{ height: 14, backgroundColor: '#e2e8f0', borderRadius: 4, width: '60%' }} />
+                      </td>
+                      <td style={{ padding: '12px 10px' }}>
+                        <div style={{ height: 20, backgroundColor: '#e2e8f0', borderRadius: 999, width: '75%' }} />
+                      </td>
+                      <td style={{ padding: '12px 10px' }}>
+                        <div style={{ height: 14, backgroundColor: '#e2e8f0', borderRadius: 4, width: '50%' }} />
+                      </td>
+                      <td style={{ padding: '12px 10px' }}>
+                        <div style={{ height: 14, backgroundColor: '#e2e8f0', borderRadius: 4, width: '40%' }} />
+                      </td>
+                      <td style={{ padding: '12px 10px' }}>
+                        <div style={{ height: 14, backgroundColor: '#e2e8f0', borderRadius: 4, width: '70%' }} />
+                      </td>
+                      <td style={{ padding: '12px 10px' }}>
+                        <div style={{ height: 20, backgroundColor: '#e2e8f0', borderRadius: 999, width: '80%' }} />
+                      </td>
+                      <td style={{ padding: '12px 10px' }}>
+                        <div style={{ height: 24, backgroundColor: '#e2e8f0', borderRadius: 6, width: '70px' }} />
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  builds.map((build) => {
+                    const buildDate = new Date(build.createdAt);
+                    const timeStr = buildDate.toLocaleTimeString(undefined, {
+                      hour: '2-digit', minute: '2-digit', hour12: false
+                    }) + (buildDate.getHours() >= 12 ? ' PM' : ' AM');
+                    const isExpanded = expanded === build._id;
+                    const isActive = ['queued', 'building'].includes(build.status);
 
-                  return (
-                    <React.Fragment key={build._id}>
-                      <tr style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s' }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    return (
+                      <React.Fragment key={build._id}>
+                        <tr style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s' }}
+                          onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
 
-                        {/* Project Name */}
-                        <td style={{ padding: '10px 10px' }}>
-                          <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 13.5 }}>{build.projectName}</div>
-                          <div style={{ fontSize: 11, color: '#5f6368', marginTop: 2, fontFamily: Fonts.Regular.fontFamily }}>#MB-{build.buildNumber}</div>
-                        </td>
+                          {/* Project Name */}
+                          <td style={{ padding: '10px 10px' }}>
+                            <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 13.5 }}>{build.projectName}</div>
+                            <div style={{ fontSize: 11, color: '#5f6368', marginTop: 2, fontFamily: Fonts.Regular.fontFamily }}>#MB-{build.buildNumber}</div>
+                          </td>
 
-                        {/* Branch */}
-                        <td style={{ padding: '10px 10px' }}>
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                            padding: '4px 8px', backgroundColor: '#e8eaed',
-                            borderRadius: 4, fontSize: 12, color: '#3c4043',
-                            fontFamily: Fonts.Regular.fontFamily
-                          }}>
-                            <GitBranch size={11} style={{ color: '#5f6368', flexShrink: 0 }} />
-                            <span style={{ maxWidth: 85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{build.branch}</span>
-                          </span>
-                        </td>
-
-                        {/* Platform */}
-                        <td style={{ padding: '10px 10px' }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, color: '#3c4043' }}>
-                            {build.platform === 'ios' && <IosIcon size={14} style={{ color: '#5f6368' }} />}
-                            {build.platform === 'android' && <AndroidIcon size={14} style={{ color: '#5f6368' }} />}
-                            {build.platform === 'both' && (
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                                <AndroidIcon size={14} style={{ color: '#5f6368' }} />
-                                <IosIcon size={14} style={{ color: '#5f6368' }} />
-                              </div>
-                            )}
-                            <span>
-                              {build.platform === 'ios' ? 'iOS' : build.platform === 'android' ? 'Android' : 'Both'}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Status */}
-                        <td style={{ padding: '10px 10px' }}>{renderStatus(build.status)}</td>
-
-                        {/* Queued At */}
-                        <td style={{ padding: '10px 10px', color: '#3c4043', fontWeight: 500, fontSize: 12.5, whiteSpace: 'nowrap' }}>{timeStr}</td>
-
-                        {/* Duration */}
-                        <td style={{ padding: '10px 10px', color: '#3c4043', fontWeight: 500, fontSize: 12.5 }}>
-                          {formatDuration(build.duration, build.status)}
-                        </td>
-
-                        {/* Date */}
-                        <td style={{ padding: '10px 10px' }}>{formatStackedDate(build.createdAt)}</td>
-
-                        {/* Artifacts */}
-                        <td style={{ padding: '10px 10px', textAlign: (!build.artifacts?.android?.presignedUrl && !build.artifacts?.ios?.presignedUrl) ? 'center' : 'left' }}>
-                          <div style={{ display: 'flex', gap: 8, justifyContent: (!build.artifacts?.android?.presignedUrl && !build.artifacts?.ios?.presignedUrl) ? 'center' : 'flex-start' }}>
-                            {build.artifacts?.android?.presignedUrl && (
-                              <a href={build.artifacts.android.presignedUrl} target="_blank" rel="noopener noreferrer" style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 4,
-                                padding: '4px 10px', backgroundColor: '#e6f4ea', color: '#137333',
-                                borderRadius: 999, fontSize: 11, fontWeight: 600, textDecoration: 'none'
-                              }}>
-                                <Download size={11} style={{ strokeWidth: 2.5 }} />
-                                <span>{build.artifacts.android.fileName?.endsWith('.aab') ? 'AAB' : 'APK'}</span>
-                              </a>
-                            )}
-                            {build.artifacts?.ios?.presignedUrl && (
-                              <a href={build.artifacts.ios.presignedUrl} target="_blank" rel="noopener noreferrer" style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 4,
-                                padding: '4px 10px', backgroundColor: '#e6f4ea', color: '#137333',
-                                borderRadius: 999, fontSize: 11, fontWeight: 600, textDecoration: 'none'
-                              }}>
-                                <Download size={11} style={{ strokeWidth: 2.5 }} />
-                                <span>IPA</span>
-                              </a>
-                            )}
-                            {!build.artifacts?.android?.presignedUrl && !build.artifacts?.ios?.presignedUrl && (
-                              <span style={{ color: '#9ca3af', fontWeight: 500 }}>-</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Log */}
-                        <td style={{ padding: '10px 10px', textAlign: 'left' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 6 }}>
-                            <button onClick={() => toggleLogs(build._id)} style={{
-                              backgroundColor: isExpanded ? '#e2e8f0' : '#f8fafc',
-                              color: '#475569', border: '1px solid #cbd5e1', borderRadius: 6,
-                              padding: '4px 10px', fontSize: 11, fontWeight: 650, cursor: 'pointer',
-                              display: 'inline-flex', alignItems: 'center', gap: 4, width: 75, justifyContent: 'center'
+                          {/* Branch */}
+                          <td style={{ padding: '10px 10px' }}>
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 5,
+                              padding: '4px 8px', backgroundColor: '#e8eaed',
+                              borderRadius: 4, fontSize: 12, color: '#3c4043',
+                              fontFamily: Fonts.Regular.fontFamily
                             }}>
-                              <FileText size={13} />
-                              <span>{isExpanded ? 'Close' : 'Logs'}</span>
-                            </button>
-                            {isActive && (
-                              <button onClick={() => handleCancel(build._id)} style={{
-                                backgroundColor: '#fff1f2', color: '#ef4444',
-                                border: '1px solid #fecdd3', borderRadius: 6,
-                                padding: '4px 10px', fontSize: 11, fontWeight: 650, cursor: 'pointer',
-                                width: 75, textAlign: 'center', justifyContent: 'center'
-                              }}>Cancel</button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                              <GitBranch size={11} style={{ color: '#5f6368', flexShrink: 0 }} />
+                              <span style={{ maxWidth: 85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{build.branch}</span>
+                            </span>
+                          </td>
 
-                      {/* Log Panel */}
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan="9" style={{ backgroundColor: '#f8fafc', padding: '0 20px 20px 20px', borderBottom: '1px solid #e5e7eb' }}>
-                            <div style={{ paddingTop: 16 }}>
-                              {build.status === 'failed' && (build.error || build.logs?.some(l => l.level === 'error')) && (
-                                <div style={{
-                                  backgroundColor: '#fff1f2', borderLeft: '4px solid #f43f5e',
-                                  padding: '12px 16px', borderRadius: '0 8px 8px 0',
-                                  display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12
-                                }}>
-                                  <AlertTriangle size={16} style={{ color: '#f43f5e', flexShrink: 0, marginTop: 1 }} />
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#9f1239' }}>
-                                    <strong>Build Failure Details:</strong>
-                                    <div style={{ fontFamily: Fonts.Regular.fontFamily, marginTop: 6, fontSize: 11, backgroundColor: 'rgba(255,255,255,0.6)', padding: '6px 10px', borderRadius: 6, border: '1px solid #fecdd3' }}>
-                                      {build.error || 'Check compilation error logs below.'}
-                                    </div>
-                                  </div>
+                          {/* Platform */}
+                          <td style={{ padding: '10px 10px' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, color: '#3c4043' }}>
+                              {build.platform === 'ios' && <IosIcon size={14} style={{ color: '#5f6368' }} />}
+                              {build.platform === 'android' && <AndroidIcon size={14} style={{ color: '#5f6368' }} />}
+                              {build.platform === 'both' && (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                  <AndroidIcon size={14} style={{ color: '#5f6368' }} />
+                                  <IosIcon size={14} style={{ color: '#5f6368' }} />
                                 </div>
                               )}
-                              {build.provider === 'github' && build.platform !== 'ios' && (
-                                <div style={{
-                                  backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1',
-                                  padding: '12px 16px', borderRadius: '8px',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12
+                              <span>
+                                {build.platform === 'ios' ? 'iOS' : build.platform === 'android' ? 'Android' : 'Both'}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Status */}
+                          <td style={{ padding: '10px 10px' }}>{renderStatus(build.status)}</td>
+
+                          {/* Queued At */}
+                          <td style={{ padding: '10px 10px', color: '#3c4043', fontWeight: 500, fontSize: 12.5, whiteSpace: 'nowrap' }}>{timeStr}</td>
+
+                          {/* Duration */}
+                          <td style={{ padding: '10px 10px', color: '#3c4043', fontWeight: 500, fontSize: 12.5 }}>
+                            {formatDuration(build.duration, build.status)}
+                          </td>
+
+                          {/* Date */}
+                          <td style={{ padding: '10px 10px' }}>{formatStackedDate(build.createdAt)}</td>
+
+                          {/* Artifacts */}
+                          <td style={{ padding: '10px 10px', textAlign: (!build.artifacts?.android?.presignedUrl && !build.artifacts?.ios?.presignedUrl) ? 'center' : 'left' }}>
+                            <div style={{ display: 'flex', gap: 8, justifyContent: (!build.artifacts?.android?.presignedUrl && !build.artifacts?.ios?.presignedUrl) ? 'center' : 'flex-start' }}>
+                              {build.artifacts?.android?.presignedUrl && (
+                                <a href={build.artifacts.android.presignedUrl} target="_blank" rel="noopener noreferrer" style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                                  padding: '4px 10px', backgroundColor: '#e6f4ea', color: '#137333',
+                                  borderRadius: 999, fontSize: 11, fontWeight: 600, textDecoration: 'none'
                                 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155' }}>
-                                    <span role="img" aria-label="github" style={{ fontSize: 16 }}>🐙</span>
-                                    <span>GitHub Actions workflow execution logs can be monitored directly in real-time.</span>
-                                  </div>
-                                  <a href={getGithubRunUrl(build)} target="_blank" rel="noopener noreferrer" style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                                    padding: '6px 14px', borderRadius: '6px', backgroundColor: '#0f172a',
-                                    color: '#ffffff', fontSize: 12, fontWeight: 500, transition: 'background-color 0.2s',
-                                    textDecoration: 'none'
-                                  }}>
-                                    View Full Logs
-                                  </a>
-                                </div>
+                                  <Download size={11} style={{ strokeWidth: 2.5 }} />
+                                  <span>{build.artifacts.android.fileName?.endsWith('.aab') ? 'AAB' : 'APK'}</span>
+                                </a>
                               )}
-                              {build.platform === 'ios' && build.githubRunUrl && (
-                                <div style={{
-                                  backgroundColor: '#f0f7ff', border: '1px solid #bae6fd',
-                                  padding: '12px 16px', borderRadius: '8px',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12
+                              {build.artifacts?.ios?.presignedUrl && (
+                                <a href={build.artifacts.ios.presignedUrl} target="_blank" rel="noopener noreferrer" style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                                  padding: '4px 10px', backgroundColor: '#e6f4ea', color: '#137333',
+                                  borderRadius: 999, fontSize: 11, fontWeight: 600, textDecoration: 'none'
                                 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#0369a1' }}>
-                                    <IosIcon size={16} style={{ color: '#0369a1' }} />
-                                    <span>Xcode Cloud build runs can be monitored directly on App Store Connect in real-time.</span>
-                                  </div>
-                                  <a href={build.githubRunUrl} target="_blank" rel="noopener noreferrer" style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                                    padding: '6px 14px', borderRadius: '6px', backgroundColor: '#0f172a',
-                                    color: '#ffffff', fontSize: 12, fontWeight: 500, transition: 'background-color 0.2s',
-                                    textDecoration: 'none'
-                                  }}>
-                                    View Full Logs
-                                  </a>
-                                </div>
+                                  <Download size={11} style={{ strokeWidth: 2.5 }} />
+                                  <span>IPA</span>
+                                </a>
                               )}
-                              <div style={{
-                                backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: 10,
-                                padding: '20px 24px', maxHeight: 320, overflowY: 'auto',
-                                display: 'flex', flexDirection: 'column', gap: 14
+                              {!build.artifacts?.android?.presignedUrl && !build.artifacts?.ios?.presignedUrl && (
+                                <span style={{ color: '#9ca3af', fontWeight: 500 }}>-</span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Log */}
+                          <td style={{ padding: '10px 10px', textAlign: 'left' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 6 }}>
+                              <button onClick={() => toggleLogs(build._id)} style={{
+                                backgroundColor: isExpanded ? '#e2e8f0' : '#f8fafc',
+                                color: '#475569', border: '1px solid #cbd5e1', borderRadius: 6,
+                                padding: '4px 10px', fontSize: 11, fontWeight: 650, cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', gap: 4, width: 75, justifyContent: 'center'
                               }}>
-                                {(!build.logs || build.logs.length === 0) ? (
-                                  <div style={{ color: '#9ca3af', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>No logs recorded for this build.</div>
-                                ) : (
-                                  build.logs.map((log, index) => {
-                                    const time = new Date(log.timestamp).toLocaleTimeString([], {
-                                      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
-                                    });
-                                    const icon = getLogIcon(log.message);
-                                    return (
-                                      <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: 16, fontSize: 13, lineHeight: 1.5 }}>
-                                        <div style={{ width: 90, flexShrink: 0, fontFamily: Fonts.Regular.fontFamily, color: '#9ca3af', userSelect: 'none' }}>{time}</div>
-                                        <div style={{ display: 'flex', gap: 8, color: '#334155' }}>
-                                          {icon}
-                                          <span style={{ color: log.level === 'error' ? '#e11d48' : log.level === 'warn' ? '#d97706' : undefined, fontWeight: log.level === 'error' || log.level === 'warn' ? 500 : undefined }}>
-                                            {renderLogMessage(log.message, log.level)}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    );
-                                  })
-                                )}
-                              </div>
+                                <FileText size={13} />
+                                <span>{isExpanded ? 'Close' : 'Logs'}</span>
+                              </button>
+                              {isActive && (
+                                <button onClick={() => handleCancel(build._id)} style={{
+                                  backgroundColor: '#fff1f2', color: '#ef4444',
+                                  border: '1px solid #fecdd3', borderRadius: 6,
+                                  padding: '4px 10px', fontSize: 11, fontWeight: 650, cursor: 'pointer',
+                                  width: 75, textAlign: 'center', justifyContent: 'center'
+                                }}>Cancel</button>
+                              )}
                             </div>
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
+
+                        {/* Log Panel */}
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan="9" style={{ backgroundColor: '#f8fafc', padding: '0 20px 20px 20px', borderBottom: '1px solid #e5e7eb' }}>
+                              <div style={{ paddingTop: 16 }}>
+                                {build.status === 'failed' && (build.error || build.logs?.some(l => l.level === 'error')) && (
+                                  <div style={{
+                                    backgroundColor: '#fff1f2', borderLeft: '4px solid #f43f5e',
+                                    padding: '12px 16px', borderRadius: '0 8px 8px 0',
+                                    display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12
+                                  }}>
+                                    <AlertTriangle size={16} style={{ color: '#f43f5e', flexShrink: 0, marginTop: 1 }} />
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: '#9f1239' }}>
+                                      <strong>Build Failure Details:</strong>
+                                      <div style={{ fontFamily: Fonts.Regular.fontFamily, marginTop: 6, fontSize: 11, backgroundColor: 'rgba(255,255,255,0.6)', padding: '6px 10px', borderRadius: 6, border: '1px solid #fecdd3' }}>
+                                        {build.error || 'Check compilation error logs below.'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                                {build.provider === 'github' && build.platform !== 'ios' && (
+                                  <div style={{
+                                    backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1',
+                                    padding: '12px 16px', borderRadius: '8px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12
+                                  }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155' }}>
+                                      <span role="img" aria-label="github" style={{ fontSize: 16 }}>🐙</span>
+                                      <span>GitHub Actions workflow execution logs can be monitored directly in real-time.</span>
+                                    </div>
+                                    <a href={getGithubRunUrl(build)} target="_blank" rel="noopener noreferrer" style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                                      padding: '6px 14px', borderRadius: '6px', backgroundColor: '#0f172a',
+                                      color: '#ffffff', fontSize: 12, fontWeight: 500, transition: 'background-color 0.2s',
+                                      textDecoration: 'none'
+                                    }}>
+                                      View Full Logs
+                                    </a>
+                                  </div>
+                                )}
+                                {build.platform === 'ios' && build.githubRunUrl && (
+                                  <div style={{
+                                    backgroundColor: '#f0f7ff', border: '1px solid #bae6fd',
+                                    padding: '12px 16px', borderRadius: '8px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12
+                                  }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#0369a1' }}>
+                                      <IosIcon size={16} style={{ color: '#0369a1' }} />
+                                      <span>Xcode Cloud build runs can be monitored directly on App Store Connect in real-time.</span>
+                                    </div>
+                                    <a href={build.githubRunUrl} target="_blank" rel="noopener noreferrer" style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                                      padding: '6px 14px', borderRadius: '6px', backgroundColor: '#0f172a',
+                                      color: '#ffffff', fontSize: 12, fontWeight: 500, transition: 'background-color 0.2s',
+                                      textDecoration: 'none'
+                                    }}>
+                                      View Full Logs
+                                    </a>
+                                  </div>
+                                )}
+                                <div style={{
+                                  backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: 10,
+                                  padding: '20px 24px', maxHeight: 320, overflowY: 'auto',
+                                  display: 'flex', flexDirection: 'column', gap: 14
+                                }}>
+                                  {(!build.logs || build.logs.length === 0) ? (
+                                    <div style={{ color: '#9ca3af', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>No logs recorded for this build.</div>
+                                  ) : (
+                                    build.logs.map((log, index) => {
+                                      const time = new Date(log.timestamp).toLocaleTimeString([], {
+                                        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+                                      });
+                                      const icon = getLogIcon(log.message);
+                                      return (
+                                        <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: 16, fontSize: 13, lineHeight: 1.5 }}>
+                                          <div style={{ width: 90, flexShrink: 0, fontFamily: Fonts.Regular.fontFamily, color: '#9ca3af', userSelect: 'none' }}>{time}</div>
+                                          <div style={{ display: 'flex', gap: 8, color: '#334155' }}>
+                                            {icon}
+                                            <span style={{ color: log.level === 'error' ? '#e11d48' : log.level === 'warn' ? '#d97706' : undefined, fontWeight: log.level === 'error' || log.level === 'warn' ? 500 : undefined }}>
+                                              {renderLogMessage(log.message, log.level)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
 
                 {!loading && builds.length === 0 && (
                   <tr>
