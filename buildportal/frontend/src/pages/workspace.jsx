@@ -8,6 +8,33 @@ import Colors from '../config/colors.js';
 import Fonts from '../config/fonts.js';
 import { Bell, HelpCircle, Search, Settings, Play, GitBranch } from 'lucide-react';
 
+const SkeletonCard = () => (
+  <div style={{
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    padding: '16px 24px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
+    animation: 'pulse 1.5s infinite ease-in-out',
+  }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '70%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ width: 120, height: 20, backgroundColor: '#e2e8f0', borderRadius: '4px' }} />
+        <div style={{ width: 60, height: 16, backgroundColor: '#e2e8f0', borderRadius: '4px' }} />
+      </div>
+      <div style={{ width: '80%', height: 14, backgroundColor: '#e2e8f0', borderRadius: '4px' }} />
+      <div style={{ width: '60%', height: 12, backgroundColor: '#e2e8f0', borderRadius: '4px', marginTop: '6px' }} />
+    </div>
+    <div style={{ display: 'flex', gap: '12px' }}>
+      <div style={{ width: 36, height: 36, backgroundColor: '#e2e8f0', borderRadius: '8px' }} />
+      <div style={{ width: 36, height: 36, backgroundColor: '#e2e8f0', borderRadius: '8px' }} />
+    </div>
+  </div>
+);
+
 export default function WorkspacePage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -15,10 +42,12 @@ export default function WorkspacePage() {
 
   const [workspaces, setWorkspaces] = useState([]);
   const [latestBuilds, setLatestBuilds] = useState({});
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
     const provider = user.provider || 'github';
+    setLoading(true);
 
     api.get(`/repos/${provider}`)
       .then(({ data }) => {
@@ -60,13 +89,16 @@ export default function WorkspacePage() {
               }
             });
             setLatestBuilds(latest);
+            setLoading(false);
           })
           .catch(err => {
             console.error('Failed to fetch builds for workspaces', err);
+            setLoading(false);
           });
       })
       .catch(err => {
         console.error('Failed to fetch workspaces from provider', err);
+        setLoading(false);
       });
   }, [user]);
 
@@ -147,7 +179,19 @@ export default function WorkspacePage() {
 
           {/* Workspaces List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {filteredWorkspaces.length === 0 ? (
+            {loading ? (
+              <>
+                <style>{`
+                  @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                  }
+                `}</style>
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </>
+            ) : filteredWorkspaces.length === 0 ? (
               <div style={{
                 textAlign: 'center',
                 padding: '64px 24px',

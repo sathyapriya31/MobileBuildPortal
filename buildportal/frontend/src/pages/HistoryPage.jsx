@@ -585,7 +585,7 @@ export default function HistoryPage() {
                                   display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12
                                 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#0369a1' }}>
-                                    <span role="img" aria-label="apple" style={{ fontSize: 16 }}>🍎</span>
+                                    <IosIcon size={16} style={{ color: '#0369a1' }} />
                                     <span>Xcode Cloud build runs can be monitored directly on App Store Connect in real-time.</span>
                                   </div>
                                   <a href={build.githubRunUrl} target="_blank" rel="noopener noreferrer" style={{
