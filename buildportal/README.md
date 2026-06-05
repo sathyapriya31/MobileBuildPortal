@@ -150,7 +150,7 @@ buildportal/
 │   │   ├── pages/
 │   │   │   ├── BuildPage.jsx         # Trigger build UI (repo, branch, platform, build type)
 │   │   │   ├── HistoryPage.jsx       # Build history with live log viewer
-│   │   │   ├── KeystorePage.jsx      # Android keystore management
+│   │   │   ├── workspace.jsx         # Android keystore management
 │   │   │   └── LoginPage.jsx         # GitHub / GitLab OAuth login
 │   │   ├── store/                    # Redux Toolkit slices
 │   │   └── main.jsx                  # SPA entry point

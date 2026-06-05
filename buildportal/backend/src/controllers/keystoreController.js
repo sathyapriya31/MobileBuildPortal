@@ -4,7 +4,7 @@ import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import Keystore from '../models/Keystore.js';
-import { uploadBufferToS3 } from '../services/s3Service.js';
+import { uploadBufferToS3, getPresignedUrl } from '../services/s3Service.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 const storage = multer.memoryStorage();
@@ -103,7 +103,32 @@ export async function getKeystore(req, res) {
   const { projectId } = req.params;
   const ks = await Keystore.findOne({ userId: req.user._id, projectId: String(projectId) });
   if (!ks) return res.json({ keystore: null });
-  res.json({ keystore: { id: ks._id, projectId: ks.projectId, projectName: ks.projectName, filename: ks.originalFilename, uploadedAt: ks.updatedAt, firebaseAppId: ks.firebaseAppId, firebaseCliToken: ks.firebaseCliToken } });
+  let downloadUrl = '';
+  if (ks.keystoreS3Key) {
+    try {
+      downloadUrl = await getPresignedUrl(ks.keystoreS3Key);
+    } catch (err) {
+      console.error('Failed to get presigned URL for keystore:', err);
+    }
+  }
+  res.json({
+    keystore: {
+      id: ks._id,
+      projectId: ks.projectId,
+      projectName: ks.projectName,
+      filename: ks.originalFilename,
+      uploadedAt: ks.uploadedAt || ks.createdAt,
+      firebaseAppId: ks.firebaseAppId,
+      firebaseCliToken: ks.firebaseCliToken,
+      downloadUrl
+    }
+  });
+}
+
+export async function deleteKeystore(req, res) {
+  const { projectId } = req.params;
+  await Keystore.findOneAndDelete({ userId: req.user._id, projectId: String(projectId) });
+  res.json({ success: true });
 }
 
 export async function listKeystores(req, res) {

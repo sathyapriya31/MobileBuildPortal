@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { fetchRepos, fetchBranches, selectRepo } from '../store/slices/reposSlice.js';
 import { triggerBuild } from '../store/slices/buildsSlice.js';
@@ -51,6 +52,16 @@ export default function BuildPage() {
   const { repos, branches, loading, branchesLoading, selectedRepo } = useSelector(s => s.repos);
   const { triggerLoading } = useSelector(s => s.builds);
 
+  const [searchParams] = useSearchParams();
+  const repoParam = searchParams.get('repo');
+  const branchParam = searchParams.get('branch');
+  const platformParam = searchParams.get('platform');
+  const androidFormatParam = searchParams.get('androidFormat');
+  const buildTypeParam = searchParams.get('buildType');
+  const versionNameParam = searchParams.get('versionName');
+  const versionCodeParam = searchParams.get('versionCode');
+  const releaseNotesParam = searchParams.get('releaseNotes');
+
   const [branch, setBranch] = useState('');
   const [platform, setPlatform] = useState('android');
   const [androidFormat, setAndroidFormat] = useState('apk');
@@ -78,6 +89,16 @@ export default function BuildPage() {
     if (user) dispatch(fetchRepos({ provider: user.provider, search }));
   }, [user, search]);
 
+  // Auto-select repo from query param
+  useEffect(() => {
+    if (repos.length > 0 && repoParam && !selectedRepo) {
+      const matchedRepo = repos.find(r => r.fullName.toLowerCase() === repoParam.toLowerCase());
+      if (matchedRepo) {
+        dispatch(selectRepo(matchedRepo));
+      }
+    }
+  }, [repos, repoParam, selectedRepo, dispatch]);
+
   useEffect(() => {
     if (selectedRepo) {
       const [owner, repo] = selectedRepo.fullName.split('/');
@@ -95,9 +116,26 @@ export default function BuildPage() {
     }
   }, [selectedRepo]);
 
+  // Set branch (use query param if matched)
   useEffect(() => {
-    if (branches.length) setBranch(branches[0].name);
-  }, [branches]);
+    if (branches.length) {
+      if (branchParam && branches.some(b => b.name === branchParam)) {
+        setBranch(branchParam);
+      } else {
+        setBranch(branches[0].name);
+      }
+    }
+  }, [branches, branchParam]);
+
+  // Set other configuration details from query params
+  useEffect(() => {
+    if (platformParam) setPlatform(platformParam);
+    if (androidFormatParam) setAndroidFormat(androidFormatParam);
+    if (versionNameParam) setVersionName(versionNameParam);
+    if (buildTypeParam) setBuildType(buildTypeParam);
+    if (releaseNotesParam) setReleaseNotes(decodeURIComponent(releaseNotesParam));
+    if (versionCodeParam) setVersionCode(versionCodeParam);
+  }, [platformParam, androidFormatParam, versionNameParam, buildTypeParam, releaseNotesParam, versionCodeParam]);
 
   const handleRepoSelect = (repo) => {
     dispatch(selectRepo(repo));
@@ -188,9 +226,9 @@ export default function BuildPage() {
 
   const handleBuild = async () => {
     if (!selectedRepo || !branch) return toast.error('Select a repo and branch');
-    if (platform === 'android' && buildType === 'release' && !versionCode) return toast.error('Enter a version code for Play Store builds');
-    
-    const isAndroidPlaystore = platform === 'android' && buildType === 'release';
+    if (platform === 'android' && buildType === 'playstore' && !versionCode) return toast.error('Enter a version code for Play Store builds');
+
+    const isAndroidPlaystore = platform === 'android' && buildType === 'playstore';
     const result = await dispatch(triggerBuild({
       projectId: selectedRepo.id,
       projectName: selectedRepo.name,
@@ -230,8 +268,8 @@ export default function BuildPage() {
         boxSizing: 'border-box'
       }}>
         {/* Left Side: Breadcrumb */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#475569', ...Fonts.Medium }}>
-          <span style={{ color: '#00388d', ...Fonts.Bold }}>New Configuration</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '18px', color: '#00388d', ...Fonts.Bold }}>
+          <span>New Configuration</span>
         </div>
 
         {/* Right Side: Actions */}
@@ -779,7 +817,7 @@ export default function BuildPage() {
                 {/* Left column: Build Options (TestFlight only for iOS) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingRight: '24px' }}>
                   <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.4px' }}>BUILD OPTIONS</span>
-                  
+
                   {/* TestFlight Button */}
                   <div
                     style={{

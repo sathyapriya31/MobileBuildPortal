@@ -1,6 +1,6 @@
 import multer from 'multer';
 import AppleCredential from '../models/AppleCredential.js';
-import { uploadBufferToS3 } from '../services/s3Service.js';
+import { uploadBufferToS3, getPresignedUrl } from '../services/s3Service.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 const storage = multer.memoryStorage();
@@ -53,6 +53,15 @@ export async function getAppleCredentials(req, res) {
   const creds = await AppleCredential.findOne({ userId: req.user._id, projectId: String(projectId) });
   if (!creds) return res.json({ credentials: null });
 
+  let downloadUrl = '';
+  if (creds.p8KeyS3Key) {
+    try {
+      downloadUrl = await getPresignedUrl(creds.p8KeyS3Key);
+    } catch (err) {
+      console.error('Failed to get presigned URL for Apple credentials:', err);
+    }
+  }
+
   res.json({
     credentials: {
       id: creds._id,
@@ -61,7 +70,14 @@ export async function getAppleCredentials(req, res) {
       apiKeyId: creds.apiKeyId,
       apiIssuer: creds.apiIssuer,
       filename: creds.originalFilename,
-      uploadedAt: creds.updatedAt
+      uploadedAt: creds.updatedAt,
+      downloadUrl
     }
   });
+}
+
+export async function deleteAppleCredentials(req, res) {
+  const { projectId } = req.params;
+  await AppleCredential.findOneAndDelete({ userId: req.user._id, projectId: String(projectId) });
+  res.json({ success: true });
 }

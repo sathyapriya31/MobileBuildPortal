@@ -12,7 +12,7 @@ import Fonts from '../config/fonts.js';
 const NAV = [
   { to: '/build', label: 'New Build', icon: PlusCircle },
   { to: '/history', label: 'Build History', icon: History },
-  { to: '/keystores', label: 'Connected workspace', icon: Link2 },
+  { to: '/workspace', label: 'Connected workspace', icon: Link2 },
   { to: '#', label: 'Analytical', icon: BarChart2 },
 ];
 

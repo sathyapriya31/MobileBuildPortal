@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { upload, uploadKeystore, generateKeystore, getKeystore, listKeystores, updateFirebaseConfig } from '../controllers/keystoreController.js';
+import { upload, uploadKeystore, generateKeystore, getKeystore, listKeystores, updateFirebaseConfig, deleteKeystore } from '../controllers/keystoreController.js';
 
 const router = Router();
 router.use(authenticate);
@@ -9,4 +9,5 @@ router.post('/generate', generateKeystore);
 router.put('/firebase', updateFirebaseConfig);
 router.get('/', listKeystores);
 router.get('/:projectId', getKeystore);
+router.delete('/:projectId', deleteKeystore);
 export default router;

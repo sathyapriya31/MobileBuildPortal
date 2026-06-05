@@ -16,14 +16,14 @@ let buildQueue;
 async function fetchYamlFromRepo(user, repoUrl, branch) {
   const { path } = parseRepoUrl(repoUrl);
   const fileNames = ['buildportal.yml', '.buildportal.yml', 'spritle.yaml'];
-  
+
   if (user.provider === 'github') {
     const headers = {
       'Authorization': `token ${user.accessToken}`,
       'Accept': 'application/vnd.github.v3.raw',
       'User-Agent': 'BuildPortal'
     };
-    
+
     for (const fileName of fileNames) {
       try {
         const res = await axios.get(`https://api.github.com/repos/${path}/contents/${fileName}?ref=${encodeURIComponent(branch)}`, { headers });
@@ -39,7 +39,7 @@ async function fetchYamlFromRepo(user, repoUrl, branch) {
     const headers = {
       'Authorization': `Bearer ${user.accessToken}`
     };
-    
+
     const gitlabUrl = user.gitlabUrl || process.env.GITLAB_URL || 'https://gitlab.com';
     for (const fileName of fileNames) {
       try {
@@ -104,7 +104,7 @@ async function processXcodeCloudBuild(build, io) {
       if (appleKey) {
         await logCallback('info', 'Found project-specific Apple App Store Connect Credentials. Fetching key from S3...');
         const s3Stream = await getObjectFromS3(appleKey.p8KeyS3Key);
-        
+
         // Convert S3 stream to string
         const privateKey = await new Promise((resolve, reject) => {
           const chunks = [];
@@ -140,22 +140,22 @@ async function processXcodeCloudBuild(build, io) {
 
     if (pollResult.status === 'success') {
       await logCallback('info', 'Xcode Cloud Build SUCCEEDED!');
-      
+
       const freshBuild = await Build.findById(buildId);
-      freshBuild.status = freshBuild.platform === 'both' && freshBuild.status === 'building' 
+      freshBuild.status = freshBuild.platform === 'both' && freshBuild.status === 'building'
         ? 'building' // keep building if android is still compiling
         : 'success';
-      
+
       freshBuild.finishedAt = new Date();
       freshBuild.duration = freshBuild.startedAt ? Math.floor((new Date() - freshBuild.startedAt) / 1000) : 0;
-      
+
       const testFlightLink = `https://appstoreconnect.apple.com/apps/${triggerResult.appId}/testflight`;
       freshBuild.artifacts.ios = {
         testFlightLink,
         fileName: `Xcode Cloud Build #${pollResult.buildNumber || ''}`,
         size: 0
       };
-      
+
       await freshBuild.save();
       await logCallback('info', `TestFlight Link generated and saved: ${testFlightLink}`);
 
@@ -166,7 +166,7 @@ async function processXcodeCloudBuild(build, io) {
         artifacts: freshBuild.artifacts,
         duration: freshBuild.duration
       });
-      
+
       // Send slack notifications
       try {
         await notifySlack({
@@ -185,7 +185,7 @@ async function processXcodeCloudBuild(build, io) {
   } catch (err) {
     const errorMsg = err.message || String(err);
     await logCallback('error', errorMsg);
-    
+
     const freshBuild = await Build.findById(buildId);
     freshBuild.status = 'failed';
     freshBuild.error = errorMsg;
@@ -263,6 +263,7 @@ async function dispatchToGitHubActions(build, io) {
       keystore_alias: ks.keystoreAlias,
       keystore_password: ks.keystorePassword,
       keystore_key_password: ks.keyPassword,
+      keystore_url: keystoreUrl,
     } : {
       keystore_exists: 'false',
     };
