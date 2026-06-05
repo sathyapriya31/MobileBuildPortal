@@ -7,6 +7,7 @@ import { Bell, HelpCircle, ChevronDown, ChevronRight, Calendar, CheckCircle2, Al
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import Colors from '../config/colors.js';
 import Fonts from '../config/fonts.js';
+import RegionalBuildLatency from '../components/RegionalBuildLatency.jsx';
 
 export default function AnalyticsPage() {
   const styles = getStyles();
@@ -66,12 +67,12 @@ export default function AnalyticsPage() {
       buildCount: filteredBuilds.filter(b => b.projectName === r.name).length,
     }))
     .sort((a, b) => b.buildCount - a.buildCount)
-    .slice(0, 5);
+    .slice(0, 7);
 
   // Recent errors
   const recentErrors = filteredBuilds
     .filter(b => b.status === 'failed')
-    .slice(0, 3)
+    .slice(0, 4)
     .map(b => ({
       title: b.error || 'Build Failed',
       repo: b.projectName || 'Unknown',
@@ -139,21 +140,6 @@ export default function AnalyticsPage() {
             <h1 style={styles.headerTitle}>Analytics</h1>
             <p style={styles.headerSubtitle}>Monitor build performance, resource usage, and success metrics.</p>
           </div>
-          <div style={styles.headerRight}>
-            <div style={styles.dateSelectWrapper}>
-              <Calendar size={15} style={styles.dateSelectCalIcon} />
-              <select
-                value={dateRange}
-                onChange={(e) => setDateRange(e.target.value)}
-                style={styles.dateRangeSelect}
-              >
-                <option value="last7">Last 7 Days</option>
-                <option value="last30">Last 30 Days</option>
-                <option value="last90">Last 90 Days</option>
-              </select>
-              <ChevronDown size={14} style={styles.dateSelectChevron} />
-            </div>
-          </div>
         </div>
 
         {/* ── KPI Cards ── */}
@@ -215,6 +201,9 @@ export default function AnalyticsPage() {
             />
           </div>
         </div>
+
+        {/* ── Regional Build Latency ── */}
+        <RegionalBuildLatency />
 
         {/* ── Bottom Section ── */}
         <div style={styles.bottomGrid}>
@@ -289,9 +278,10 @@ export default function AnalyticsPage() {
                 const isExpired = /expired/i.test(error.title);
                 const ErrorIcon = isWarning ? AlertTriangle : isExpired ? XCircle : AlertCircle;
                 const iconColor = isWarning ? '#F59E0B' : '#DC2626';
+                const isLast = idx === recentErrors.length - 1;
 
                 return (
-                  <div key={idx} style={styles.errorRow}>
+                  <div key={idx} style={{ ...styles.errorRow, ...(isLast ? { borderBottom: 'none' } : {}) }}>
                     <ErrorIcon size={20} style={{ color: iconColor, flexShrink: 0, marginTop: 2 }} />
                     <div style={styles.errorContent}>
                       <div style={styles.errorTopRow}>
@@ -342,9 +332,33 @@ function KpiCard({ title, value, trend, trendColor, iconBg, icon, styles }) {
 
 // ─── Bar Chart ───────────────────────────────────────────────────────────────
 
+const BAR_DARK_BLUE = '#1D4ED8';
+const BAR_LIGHT_BLUE = 'rgba(29, 78, 216, 0.25)';
+const BAR_HOVER_BLUE = 'rgba(29, 78, 216, 0.45)';
+
 function AvgBuildTimeChart({ builds, barChartRange, setBarChartRange, styles }) {
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [hoveredDate, setHoveredDate] = useState(null);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayKey = today.toISOString().split('T')[0];
+
   const weekData = getWeeklyBuildTimes(builds);
-  const todayDayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()];
+
+  const getBarFill = (dateKey) => {
+    const isActive = selectedDate ? dateKey === selectedDate : dateKey === todayKey;
+    if (isActive) return BAR_DARK_BLUE;
+    if (hoveredDate === dateKey) return BAR_HOVER_BLUE;
+    return BAR_LIGHT_BLUE;
+  };
+
+  const handleChartClick = (data) => {
+    const dateKey = data?.activePayload?.[0]?.payload?.dateKey;
+    if (dateKey) {
+      setSelectedDate(prev => (prev === dateKey ? null : dateKey));
+    }
+  };
 
   return (
     <div style={styles.chartCard}>
@@ -368,28 +382,30 @@ function AvgBuildTimeChart({ builds, barChartRange, setBarChartRange, styles }) 
         </div>
       </div>
       <ResponsiveContainer width="100%" height={260}>
-        <BarChart data={weekData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }} barCategoryGap="15%">
+        <BarChart
+          data={weekData}
+          margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
+          barCategoryGap="15%"
+          onClick={handleChartClick}
+          style={{ cursor: 'pointer' }}
+        >
           <CartesianGrid vertical={false} stroke="#F3F4F6" strokeDasharray="0" />
           <XAxis
             dataKey="day"
             axisLine={false}
             tickLine={false}
-            tick={({ x, y, payload }) => {
-              const isToday = payload.value === todayDayName;
-              return (
-                <text
-                  x={x}
-                  y={y + 14}
-                  textAnchor="middle"
-                  fill={isToday ? '#1E3A8A' : '#9CA3AF'}
-                  fontWeight={isToday ? 700 : 400}
-                  fontSize={12}
-                  fontFamily="Google Sans, sans-serif"
-                >
-                  {payload.value}
-                </text>
-              );
-            }}
+            tick={({ x, y, payload }) => (
+              <text
+                x={x}
+                y={y + 14}
+                textAnchor="middle"
+                fill="#9CA3AF"
+                fontSize={12}
+                fontFamily="Google Sans, sans-serif"
+              >
+                {payload.value}
+              </text>
+            )}
           />
           <YAxis hide />
           <Tooltip
@@ -403,9 +419,20 @@ function AvgBuildTimeChart({ builds, barChartRange, setBarChartRange, styles }) 
             }}
             cursor={{ fill: 'rgba(0,0,0,0.04)' }}
           />
-          <Bar dataKey="avgTime" radius={[4, 4, 0, 0]} fill="#0F4CB5">
-            {weekData.map((_, index) => (
-              <Cell key={index} fill="#0F4CB5" />
+          <Bar
+            dataKey="avgTime"
+            radius={[4, 4, 0, 0]}
+            isAnimationActive
+            animationDuration={300}
+            onMouseEnter={(data) => setHoveredDate(data.dateKey)}
+            onMouseLeave={() => setHoveredDate(null)}
+          >
+            {weekData.map((entry) => (
+              <Cell
+                key={entry.dateKey}
+                fill={getBarFill(entry.dateKey)}
+                style={{ cursor: 'pointer', transition: 'fill 0.25s ease' }}
+              />
             ))}
           </Bar>
         </BarChart>
@@ -425,6 +452,7 @@ function getWeeklyBuildTimes(builds) {
     d.setHours(0, 0, 0, 0);
 
     const dayName = dayNames[d.getDay()];
+    const dateKey = d.toISOString().split('T')[0];
     const dayBuilds = builds.filter(b => {
       if (!b.createdAt || !b.duration) return false;
       const bd = new Date(b.createdAt);
@@ -436,7 +464,7 @@ function getWeeklyBuildTimes(builds) {
       ? Math.round(dayBuilds.reduce((s, b) => s + (b.duration || 0), 0) / dayBuilds.length)
       : 0;
 
-    result.push({ day: dayName, avgTime });
+    result.push({ day: dayName, dateKey, avgTime });
   }
 
   return result;
@@ -445,15 +473,25 @@ function getWeeklyBuildTimes(builds) {
 // ─── Donut Chart ─────────────────────────────────────────────────────────────
 
 function PlatformDonutChart({ android, ios, total, styles }) {
+  const [activeIndex, setActiveIndex] = useState(null);
+
   const androidPct = total > 0 ? Math.round((android / total) * 100) : 0;
   const iosPct = total > 0 ? 100 - androidPct : 0;
-  const DONUT_SIZE = 180;
 
-  const data = total > 0
-    ? [{ name: 'Android', value: android }, { name: 'iOS', value: ios }]
-    : [{ name: 'No Data', value: 1 }];
+  const platformData = total > 0
+    ? [
+        { name: 'Android', value: android, color: '#16A34A' },
+        { name: 'iOS', value: ios, color: '#2563EB' },
+      ]
+    : [{ name: 'No Data', value: 1, color: '#E5E7EB' }];
 
-  const COLORS = total > 0 ? ['#16A34A', '#2563EB'] : ['#E5E7EB'];
+  const legend = [
+    { label: 'Android', pct: androidPct, color: '#16A34A' },
+    { label: 'iOS', pct: iosPct, color: '#2563EB' },
+  ];
+
+  const hovered = activeIndex !== null && total > 0 ? platformData[activeIndex] : null;
+  const hoveredPct = hovered ? Math.round((hovered.value / total) * 100) : 0;
 
   return (
     <div style={{ ...styles.chartCard, display: 'flex', flexDirection: 'column' }}>
@@ -462,52 +500,86 @@ function PlatformDonutChart({ android, ios, total, styles }) {
         <p style={styles.chartSubtitle}>Build volume by OS</p>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
-        {/* Donut with centered label */}
-        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-          <PieChart width={DONUT_SIZE} height={DONUT_SIZE}>
-            <Pie
-              data={data}
-              cx={DONUT_SIZE / 2 - 1}
-              cy={DONUT_SIZE / 2 - 1}
-              innerRadius={60}
-              outerRadius={85}
-              dataKey="value"
-              startAngle={90}
-              endAngle={-270}
-              strokeWidth={0}
-            >
-              {data.map((_, i) => (
-                <Cell key={i} fill={COLORS[i % COLORS.length]} />
-              ))}
-            </Pie>
-          </PieChart>
-          <div style={{ position: 'absolute', textAlign: 'center', pointerEvents: 'none' }}>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#111827', fontFamily: 'Google Sans, sans-serif', lineHeight: 1 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+        {/* Donut with centered label overlay */}
+        <div style={{ position: 'relative', width: '100%', height: '210px' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={platformData}
+                cx="50%"
+                cy="50%"
+                innerRadius={70}
+                outerRadius={95}
+                dataKey="value"
+                startAngle={90}
+                endAngle={-270}
+                strokeWidth={0}
+                animationBegin={0}
+                animationDuration={700}
+                onMouseEnter={(_, index) => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(null)}
+              >
+                {platformData.map((entry, i) => (
+                  <Cell
+                    key={i}
+                    fill={entry.color}
+                    opacity={activeIndex === null || activeIndex === i ? 1 : 0.45}
+                    style={{ cursor: total > 0 ? 'pointer' : 'default', transition: 'opacity 0.2s ease' }}
+                  />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            textAlign: 'center',
+            pointerEvents: 'none',
+          }}>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827', fontFamily: 'Google Sans, sans-serif', lineHeight: 1 }}>
               {total.toLocaleString()}
             </div>
-            <div style={{ fontSize: '11px', color: '#9CA3AF', fontFamily: 'Google Sans, sans-serif', marginTop: '4px' }}>
+            <div style={{ fontSize: '11px', color: '#9CA3AF', fontFamily: 'Google Sans, sans-serif', marginTop: '5px' }}>
               Total Builds
             </div>
           </div>
         </div>
 
+        {/* Hover info pill — shown outside the ring, between chart and legend */}
+        <div style={{ height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {hovered && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              background: '#F8FAFC',
+              border: '1px solid #E5E7EB',
+              borderRadius: '6px',
+              fontFamily: 'Google Sans, sans-serif',
+            }}>
+              <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: hovered.color, flexShrink: 0 }} />
+              <span style={{ fontSize: '12px', fontWeight: '600', color: '#111827' }}>{hovered.name}</span>
+              <span style={{ fontSize: '12px', color: '#6B7280' }}>{hovered.value} Builds</span>
+              <span style={{ fontSize: '12px', fontWeight: '700', color: hovered.color }}>{hoveredPct}%</span>
+            </div>
+          )}
+        </div>
+
         {/* Legend */}
         <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#16A34A', flexShrink: 0 }} />
-              <span style={{ fontFamily: 'Google Sans, sans-serif', fontSize: '13px', color: '#374151' }}>Android</span>
+          {legend.map(({ label, pct, color }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: color, flexShrink: 0 }} />
+                <span style={{ fontFamily: 'Google Sans, sans-serif', fontSize: '13px', color: '#374151' }}>{label}</span>
+              </div>
+              <span style={{ fontFamily: 'Google Sans, sans-serif', fontSize: '13px', fontWeight: '600', color: '#111827' }}>{pct}%</span>
             </div>
-            <span style={{ fontFamily: 'Google Sans, sans-serif', fontSize: '13px', fontWeight: '600', color: '#111827' }}>{androidPct}%</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#2563EB', flexShrink: 0 }} />
-              <span style={{ fontFamily: 'Google Sans, sans-serif', fontSize: '13px', color: '#374151' }}>iOS</span>
-            </div>
-            <span style={{ fontFamily: 'Google Sans, sans-serif', fontSize: '13px', fontWeight: '600', color: '#111827' }}>{iosPct}%</span>
-          </div>
+          ))}
         </div>
       </div>
     </div>
@@ -529,10 +601,10 @@ function getStyles() {
     headerLeft: { flex: 1 },
     headerTitle: {
       fontFamily: 'Google Sans, sans-serif',
-      fontSize: '32px',
+      fontSize: '24px',
       fontWeight: '700',
       lineHeight: '1.1',
-      color: '#0f172a',
+      color: '#1E293B',
       letterSpacing: '-0.02em',
       margin: 0,
     },
@@ -540,7 +612,7 @@ function getStyles() {
       fontFamily: 'Google Sans, sans-serif',
       fontSize: '14px',
       fontWeight: '400',
-      color: '#94A3B8',
+      color: '#5F6368',
       margin: '6px 0 0 0',
     },
     headerRight: {
@@ -705,6 +777,8 @@ function getStyles() {
       borderRadius: '12px',
       padding: '24px',
       boxShadow: Colors.cardShadow,
+      display: 'flex',
+      flexDirection: 'column',
     },
     cardHeader: {
       display: 'flex',
@@ -753,7 +827,9 @@ function getStyles() {
       background: Colors.cardBg,
       borderRadius: '8px',
       overflowX: 'auto',
+      overflowY: 'auto',
       width: '100%',
+      flex: 1,
     },
     table: {
       width: '100%',

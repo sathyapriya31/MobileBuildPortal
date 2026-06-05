@@ -6,11 +6,11 @@ const Colors = {
   surface2: '#f1f5f9',
   surface3: '#e2e8f0',
   border: 'rgba(15,23,42,0.1)',
-  text: '#0f172a',
-  textMuted: '#64748b',
+  text: '#1E293B',
+  textMuted: '#5F6368',
   textFaint: '#94a3b8',
 
-  primary: '#14AED5',
+  primary: '#2563EB',
   primaryHover: '#0f9ac1',
   primaryBg: 'rgba(20,174,213,0.08)',
 

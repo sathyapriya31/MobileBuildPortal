@@ -1,6 +1,6 @@
 import multer from 'multer';
 import AppleCredential from '../models/AppleCredential.js';
-import { uploadBufferToS3 } from '../services/s3Service.js';
+import { uploadBufferToS3, getPresignedDownloadUrl, deleteFromS3 } from '../services/s3Service.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 const storage = multer.memoryStorage();
@@ -41,7 +41,9 @@ export async function uploadAppleCredentials(req, res) {
       apiKeyId: creds.apiKeyId,
       apiIssuer: creds.apiIssuer,
       filename: creds.originalFilename,
-      uploadedAt: creds.updatedAt
+      createdAt: creds.createdAt,
+      updatedAt: creds.updatedAt,
+      uploadedAt: creds.createdAt,
     }
   });
 }
@@ -61,7 +63,35 @@ export async function getAppleCredentials(req, res) {
       apiKeyId: creds.apiKeyId,
       apiIssuer: creds.apiIssuer,
       filename: creds.originalFilename,
-      uploadedAt: creds.updatedAt
+      createdAt: creds.createdAt,
+      updatedAt: creds.updatedAt,
+      uploadedAt: creds.createdAt,
     }
   });
+}
+
+export async function downloadAppleCredentials(req, res) {
+  const { projectId } = req.params;
+  if (!projectId) throw new AppError('Missing projectId parameter', 400);
+
+  const creds = await AppleCredential.findOne({ userId: req.user._id, projectId: String(projectId) });
+  if (!creds || !creds.p8KeyS3Key) throw new AppError('No Apple credentials found for this project', 404);
+
+  const filename = creds.originalFilename || `AuthKey_${creds.apiKeyId}.p8`;
+  const url = await getPresignedDownloadUrl(creds.p8KeyS3Key, filename);
+  res.json({ url, filename });
+}
+
+export async function deleteAppleCredentials(req, res) {
+  const { projectId } = req.params;
+  if (!projectId) throw new AppError('Missing projectId parameter', 400);
+
+  const creds = await AppleCredential.findOne({ userId: req.user._id, projectId: String(projectId) });
+  if (!creds) throw new AppError('No Apple credentials found for this project', 404);
+
+  if (creds.p8KeyS3Key) {
+    await deleteFromS3(creds.p8KeyS3Key);
+  }
+  await AppleCredential.deleteOne({ _id: creds._id });
+  res.json({ success: true });
 }

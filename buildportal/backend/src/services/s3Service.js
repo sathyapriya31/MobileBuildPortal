@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { readFile } from 'fs/promises';
 
@@ -42,6 +42,24 @@ export async function getPresignedUrl(key, expiresIn = 3600) {
   });
   const s3 = createS3Client();
   return getSignedUrl(s3, command, { expiresIn });
+}
+
+export async function getPresignedDownloadUrl(key, filename, expiresIn = 3600) {
+  const command = new GetObjectCommand({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: key,
+    ResponseContentDisposition: `attachment; filename="${encodeURIComponent(filename)}"`,
+  });
+  const s3 = createS3Client();
+  return getSignedUrl(s3, command, { expiresIn });
+}
+
+export async function deleteFromS3(key, bucket) {
+  const s3 = createS3Client();
+  await s3.send(new DeleteObjectCommand({
+    Bucket: bucket || process.env.S3_BUCKET_NAME,
+    Key: key,
+  }));
 }
 
 export async function getObjectFromS3(key, bucket) {

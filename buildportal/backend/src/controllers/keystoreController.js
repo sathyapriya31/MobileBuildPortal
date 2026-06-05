@@ -4,7 +4,7 @@ import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import Keystore from '../models/Keystore.js';
-import { uploadBufferToS3 } from '../services/s3Service.js';
+import { uploadBufferToS3, getPresignedDownloadUrl, deleteFromS3 } from '../services/s3Service.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 const storage = multer.memoryStorage();
@@ -26,7 +26,7 @@ export async function uploadKeystore(req, res) {
     { upsert: true, new: true }
   );
 
-  res.json({ keystore: { id: ks._id, projectId: ks.projectId, projectName: ks.projectName, filename: ks.originalFilename, uploadedAt: ks.uploadedAt } });
+  res.json({ keystore: { id: ks._id, projectId: ks.projectId, projectName: ks.projectName, filename: ks.originalFilename, keystoreAlias: ks.keystoreAlias, uploadedAt: ks.uploadedAt } });
 }
 
 export async function generateKeystore(req, res) {
@@ -84,7 +84,7 @@ export async function generateKeystore(req, res) {
       { upsert: true, new: true }
     );
 
-    res.json({ keystore: { id: ks._id, projectId: ks.projectId, projectName: ks.projectName, filename: ks.originalFilename, uploadedAt: ks.uploadedAt } });
+    res.json({ keystore: { id: ks._id, projectId: ks.projectId, projectName: ks.projectName, filename: ks.originalFilename, keystoreAlias: ks.keystoreAlias, uploadedAt: ks.uploadedAt } });
   } catch (err) {
     throw new AppError(`Failed to generate keystore: ${err.message}`, 500);
   } finally {
@@ -103,12 +103,34 @@ export async function getKeystore(req, res) {
   const { projectId } = req.params;
   const ks = await Keystore.findOne({ userId: req.user._id, projectId: String(projectId) });
   if (!ks) return res.json({ keystore: null });
-  res.json({ keystore: { id: ks._id, projectId: ks.projectId, projectName: ks.projectName, filename: ks.originalFilename, uploadedAt: ks.updatedAt, firebaseAppId: ks.firebaseAppId, firebaseCliToken: ks.firebaseCliToken } });
+  res.json({ keystore: { id: ks._id, projectId: ks.projectId, projectName: ks.projectName, filename: ks.originalFilename, keystoreAlias: ks.keystoreAlias, uploadedAt: ks.updatedAt, firebaseAppId: ks.firebaseAppId, firebaseCliToken: ks.firebaseCliToken } });
 }
 
 export async function listKeystores(req, res) {
   const ks = await Keystore.find({ userId: req.user._id }).select('-keystorePassword -keyPassword');
   res.json({ keystores: ks });
+}
+
+export async function downloadKeystore(req, res) {
+  const { projectId } = req.params;
+  const ks = await Keystore.findOne({ userId: req.user._id, projectId: String(projectId) });
+  if (!ks || !ks.keystoreS3Key) throw new AppError('No keystore found for this project', 404);
+
+  const filename = ks.originalFilename || `${projectId}.keystore`;
+  const url = await getPresignedDownloadUrl(ks.keystoreS3Key, filename);
+  res.json({ url, filename });
+}
+
+export async function deleteKeystore(req, res) {
+  const { projectId } = req.params;
+  const ks = await Keystore.findOne({ userId: req.user._id, projectId: String(projectId) });
+  if (!ks) throw new AppError('No keystore found for this project', 404);
+
+  if (ks.keystoreS3Key) {
+    await deleteFromS3(ks.keystoreS3Key);
+  }
+  await Keystore.deleteOne({ _id: ks._id });
+  res.json({ success: true });
 }
 
 export async function updateFirebaseConfig(req, res) {

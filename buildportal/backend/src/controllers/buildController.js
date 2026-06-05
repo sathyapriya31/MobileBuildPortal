@@ -184,3 +184,57 @@ export async function cancelBuild(req, res) {
   await build.save();
   res.json({ build });
 }
+
+export async function getWorkspaces(req, res) {
+  const raw = await Build.aggregate([
+    { $match: { userId: req.user._id } },
+    { $sort: { createdAt: -1 } },
+    {
+      $group: {
+        _id: '$projectId',
+        projectId: { $first: '$projectId' },
+        repositoryName: { $first: '$projectName' },
+        repoUrl: { $first: '$repoUrl' },
+        branch: { $first: '$branch' },
+        platform: { $first: '$platform' },
+        buildType: { $first: '$buildType' },
+        androidFormat: { $first: '$androidFormat' },
+        versionName: { $first: '$versionName' },
+        buildNumber: { $first: '$buildNumber' },
+        releaseNotes: { $first: '$releaseNotes' },
+        triggeredAt: { $first: '$createdAt' },
+        lastBuildStatus: { $first: '$status' },
+      },
+    },
+    { $sort: { triggeredAt: -1 } },
+  ]);
+
+  const workspaces = raw.map(w => {
+    let repositoryFullName = w.repositoryName;
+    try {
+      const url = new URL(w.repoUrl);
+      const path = url.pathname.replace(/^\//, '').replace(/\.git$/, '');
+      const parts = path.split('/');
+      if (parts.length >= 2) repositoryFullName = parts.slice(0, 2).join('/');
+    } catch {}
+    const isPlaystore = w.buildType === 'playstore';
+    return {
+      id: w.projectId,
+      projectId: w.projectId,
+      repoUrl: w.repoUrl,
+      repositoryName: w.repositoryName,
+      repositoryFullName,
+      branch: w.branch,
+      platform: w.platform,
+      buildType: w.buildType,
+      androidFormat: w.androidFormat,
+      versionName: isPlaystore ? (w.versionName || '') : '',
+      versionCode: isPlaystore ? (w.buildNumber ? String(w.buildNumber) : '') : '',
+      releaseNotes: isPlaystore ? (w.releaseNotes || '') : '',
+      triggeredAt: w.triggeredAt,
+      lastBuildStatus: w.lastBuildStatus,
+    };
+  });
+
+  res.json({ workspaces });
+}

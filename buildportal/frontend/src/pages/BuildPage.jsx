@@ -7,7 +7,7 @@ import { triggerBuild } from '../store/slices/buildsSlice.js';
 import { api } from '../services/api.js';
 import Colors from '../config/colors.js';
 import Fonts from '../config/fonts.js';
-import { Bell, HelpCircle, Folder, Search, Check, ChevronDown, GitBranch, Link as LinkIcon, Upload, Sliders, Smartphone } from 'lucide-react';
+import { Bell, HelpCircle, Folder, Search, Check, ChevronDown, GitBranch, Link as LinkIcon, Upload, Sliders, Smartphone, Key } from 'lucide-react';
 
 const getRelativeTime = (dateString) => {
   if (!dateString) return 'Last commit recent';
@@ -73,8 +73,15 @@ export default function BuildPage() {
   const [appleKeyId, setAppleKeyId] = useState('');
   const [appleIssuerId, setAppleIssuerId] = useState('');
   const [appleCredsStatus, setAppleCredsStatus] = useState(null);
-  const [isReplacingApple, setIsReplacingApple] = useState(false);
+  const [appleCredsFetching, setAppleCredsFetching] = useState(false);
   const [uploadingApple, setUploadingApple] = useState(false);
+
+  // Clear navigation state from history so a page refresh starts with an empty form
+  useEffect(() => {
+    if (location.state?.fromWorkspace) {
+      window.history.replaceState(null, document.title, window.location.pathname + window.location.search);
+    }
+  }, []);
 
   useEffect(() => {
     if (user) dispatch(fetchRepos({ provider: user.provider, search }));
@@ -93,6 +100,9 @@ export default function BuildPage() {
       if (cfg.platform) setPlatform(cfg.platform);
       if (cfg.buildType) setBuildType(cfg.buildType);
       if (cfg.androidFormat) setAndroidFormat(cfg.androidFormat);
+      if (cfg.versionName) setVersionName(cfg.versionName);
+      if (cfg.versionCode) setVersionCode(String(cfg.versionCode));
+      setReleaseNotes(cfg.releaseNotes || '');
     }
   }, [user]);
 
@@ -106,10 +116,10 @@ export default function BuildPage() {
         setIsReplacingKeystore(false);
       });
       // Check Apple credentials
-      api.get(`/apple-credentials/${selectedRepo.id}`).then(({ data }) => {
-        setAppleCredsStatus(data.credentials);
-        setIsReplacingApple(false);
-      });
+      setAppleCredsFetching(true);
+      api.get(`/apple-credentials/${selectedRepo.id}`)
+        .then(({ data }) => setAppleCredsStatus(data.credentials))
+        .finally(() => setAppleCredsFetching(false));
     }
   }, [selectedRepo]);
 
@@ -200,8 +210,7 @@ export default function BuildPage() {
     try {
       const { data } = await api.post('/apple-credentials', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setAppleCredsStatus(data.credentials);
-      setIsReplacingApple(false);
-      toast.success('App Store Connect credentials saved successfully! 🍎');
+      toast.success('App Store Connect credentials saved successfully!');
       setAppleKeyFile(null);
       setAppleKeyId('');
       setAppleIssuerId('');
@@ -209,6 +218,16 @@ export default function BuildPage() {
       toast.error(err.response?.data?.error || 'Failed to save credentials');
     } finally {
       setUploadingApple(false);
+    }
+  };
+
+  const handleDeleteAppleCredentials = async () => {
+    try {
+      await api.delete(`/apple-credentials/${selectedRepo.id}`);
+      setAppleCredsStatus(null);
+      toast.success('Apple credentials deleted');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to delete credentials');
     }
   };
 
@@ -848,18 +867,43 @@ export default function BuildPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingLeft: '24px' }}>
                   <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.4px' }}>APP STORE CONNECT CREDENTIALS</span>
 
-                  {appleCredsStatus && !isReplacingApple ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <span style={{ fontSize: '13px', ...Fonts.Bold, color: '#15803d' }}>✅ Credentials on file</span>
-                        <span style={{ fontSize: '12px', color: '#5f6368' }}>
-                          Key ID: <strong>{appleCredsStatus.apiKeyId}</strong> &nbsp;·&nbsp; File: <strong>{appleCredsStatus.filename}</strong>
+                  {appleCredsFetching ? (
+                    /* Skeleton loader while fetching */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ height: '18px', width: '160px', borderRadius: '4px', backgroundColor: '#e2e8f0', backgroundImage: 'linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease infinite' }} />
+                      <div style={{ height: '58px', borderRadius: '8px', backgroundColor: '#e2e8f0', backgroundImage: 'linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease infinite' }} />
+                    </div>
+                  ) : appleCredsStatus ? (
+                    /* Active Keys Section — only shown when credentials exist in DB */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Key size={13} color="#0c5df4" />
+                        <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#1e293b' }}>
+                          Active Keys (1 key stored)
                         </span>
                       </div>
-                      <button style={{ fontSize: '12px', color: '#5f6368', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}
-                        onClick={() => setIsReplacingApple(true)}>Replace</button>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '32px', height: '32px', borderRadius: '6px', backgroundColor: '#edf3fe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Key size={16} color="#0c5df4" />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ fontSize: '13px', ...Fonts.Bold, color: '#1e293b' }}>{appleCredsStatus.filename}</span>
+                            <span style={{ fontSize: '11px', color: '#5f6368' }}>
+                              Added {new Date(appleCredsStatus.uploadedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleDeleteAppleCredentials}
+                          style={{ fontSize: '12px', ...Fonts.Bold, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: '4px' }}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   ) : (
+                    /* Upload Form — shown only when no credentials exist */
                     <>
                       <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px', border: '2px dashed #dadce0', borderRadius: '8px', color: '#5f6368', fontSize: '13px', cursor: 'pointer' }}>
                         <input type="file" accept=".p8" style={{ display: 'none' }} onChange={e => setAppleKeyFile(e.target.files[0])} />
@@ -879,32 +923,9 @@ export default function BuildPage() {
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                        {isReplacingApple && (
-                          <button
-                            onClick={() => {
-                              setIsReplacingApple(false);
-                              setAppleKeyFile(null);
-                              setAppleKeyId('');
-                              setAppleIssuerId('');
-                            }}
-                            style={{
-                              height: '36px',
-                              padding: '0 20px',
-                              borderRadius: '8px',
-                              backgroundColor: '#f1f3f4',
-                              color: '#5f6368',
-                              border: '1px solid #dadce0',
-                              fontSize: '13px',
-                              ...Fonts.Bold,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        )}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                         <button onClick={handleSaveAppleCredentials} disabled={uploadingApple} style={{ height: '36px', padding: '0 20px', borderRadius: '8px', backgroundColor: '#00875a', color: '#ffffff', border: 'none', fontSize: '13px', ...Fonts.Bold, cursor: uploadingApple ? 'not-allowed' : 'pointer', opacity: uploadingApple ? 0.7 : 1 }}>
-                          {uploadingApple ? 'Saving...' : 'Save Credentials'}
+                          {uploadingApple ? 'Saving...' : 'Save & Validate Credentials'}
                         </button>
                       </div>
                     </>

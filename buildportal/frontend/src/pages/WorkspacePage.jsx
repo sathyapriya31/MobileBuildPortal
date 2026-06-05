@@ -1,22 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
 import { formatDistanceToNow } from 'date-fns';
-import toast from 'react-hot-toast';
-import { Bell, HelpCircle, Play, Search, Settings } from 'lucide-react';
+import { Bell, HelpCircle, Play, Search, Settings, X, Check } from 'lucide-react';
 import Colors from '../config/colors.js';
 import Fonts from '../config/fonts.js';
-import { triggerBuild } from '../store/slices/buildsSlice.js';
-
-export const BP_WORKSPACES_KEY = 'bp_workspaces';
+import { api } from '../services/api.js';
 
 export default function WorkspacePage() {
   const navigate = useNavigate();
   const { user } = useSelector(s => s.auth);
   const [search, setSearch] = useState('');
-  const [workspaces, setWorkspaces] = useState(() =>
-    JSON.parse(localStorage.getItem(BP_WORKSPACES_KEY) || '[]')
-  );
+  const [workspaces, setWorkspaces] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/builds/workspaces')
+      .then(r => setWorkspaces(r.data.workspaces || []))
+      .catch(() => setWorkspaces([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = workspaces.filter(w =>
     w.repositoryName &&
@@ -72,13 +75,17 @@ export default function WorkspacePage() {
             />
           </div>
 
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div style={styles.empty}>
+              <p style={styles.emptyText}>Loading workspaces...</p>
+            </div>
+          ) : filtered.length === 0 ? (
             <div style={styles.empty}>
               <span style={{ fontSize: '3rem' }}>🔗</span>
               <p style={styles.emptyText}>
                 {search
                   ? 'No workspaces match your search.'
-                  : 'No connected workspaces yet. Trigger a build to create one automatically.'}
+                  : 'No Connected Workspaces Found. Trigger your first build to create a workspace.'}
               </p>
               {!search && (
                 <button style={styles.newBuildBtn} onClick={() => navigate('/build')}>
@@ -100,126 +107,220 @@ export default function WorkspacePage() {
   );
 }
 
+function PillGroup({ options, value, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+      {options.map(opt => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            style={{
+              padding: '5px 14px',
+              fontSize: '13px',
+              fontWeight: active ? '600' : '400',
+              border: `1px solid ${active ? Colors.sidebarBrand : Colors.cardBorder}`,
+              borderRadius: '9999px',
+              background: active ? Colors.sidebarBrand : '#fff',
+              color: active ? '#fff' : '#374151',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function WorkspaceCard({ workspace, navigate }) {
-  const dispatch = useDispatch();
   const { user } = useSelector(s => s.auth);
-  const [triggering, setTriggering] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const {
     projectId,
     repoUrl,
     repositoryName,
     repositoryFullName,
-    branch,
-    platform,
-    buildType,
-    androidFormat,
     triggeredAt,
   } = workspace;
 
-  const isIncomplete = !projectId || !branch;
+  const [saved, setSaved] = useState({
+    branch: workspace.branch || '',
+    platform: workspace.platform || 'android',
+    buildType: workspace.buildType || 'testing',
+    androidFormat: workspace.androidFormat || 'apk',
+  });
+  const [draft, setDraft] = useState({ ...saved });
 
-  const handleTrigger = async () => {
-    if (isIncomplete) {
-      navigate('/build');
-      return;
-    }
-    setTriggering(true);
-    const result = await dispatch(triggerBuild({
-      projectId,
-      projectName: repositoryName,
-      repoUrl,
-      provider: user.provider,
-      branch,
-      platform,
-      androidFormat: (platform === 'android' || platform === 'both') ? androidFormat : undefined,
-      versionName: '1.0.0',
-      buildType: buildType || 'testing',
-    }));
-    setTriggering(false);
-    if (triggerBuild.fulfilled.match(result)) {
-      toast.success('Build queued!');
-      const existing = JSON.parse(localStorage.getItem(BP_WORKSPACES_KEY) || '[]');
-      const idx = existing.findIndex(w => w.id === workspace.id);
-      if (idx !== -1) {
-        existing[idx] = { ...existing[idx], triggeredAt: new Date().toISOString(), lastBuildStatus: 'queued' };
-        localStorage.setItem(BP_WORKSPACES_KEY, JSON.stringify(existing));
-      }
-    } else {
-      toast.error(result.payload || 'Failed to trigger build');
-    }
+  const handleOpenSettings = () => {
+    navigate(`/workspace/${projectId}/settings`);
+  };
+
+  const handleSave = () => {
+    setSaved({ ...draft });
+    setSettingsOpen(false);
+  };
+
+  const isIncomplete = !projectId || !saved.branch;
+
+  const handleTrigger = () => {
+    if (!projectId) { navigate('/build'); return; }
+    navigate('/build', {
+      state: {
+        fromWorkspace: true,
+        workspaceRepo: {
+          id: projectId,
+          name: repositoryName,
+          fullName: repositoryFullName,
+          cloneUrl: repoUrl,
+        },
+        workspaceConfig: {
+          branch: saved.branch,
+          platform: saved.platform,
+          buildType: saved.buildType,
+          androidFormat: saved.androidFormat,
+          versionName: workspace.versionName || '',
+          versionCode: workspace.versionCode || '',
+          releaseNotes: workspace.releaseNotes || '',
+        },
+      },
+    });
   };
 
   const platformLabel =
-    platform === 'android' ? 'ANDROID' :
-    platform === 'ios' ? 'iOS' :
+    saved.platform === 'android' ? 'ANDROID' :
+    saved.platform === 'ios' ? 'iOS' :
     'ANDROID + iOS';
 
   const platformColor =
-    platform === 'android' ? '#166534' :
-    platform === 'ios' ? '#3730A3' :
+    saved.platform === 'android' ? '#166534' :
+    saved.platform === 'ios' ? '#3730A3' :
     '#166534';
 
   const platformBg =
-    platform === 'android' ? '#86EFAC' :
-    platform === 'ios' ? '#C7D2FE' :
+    saved.platform === 'android' ? '#86EFAC' :
+    saved.platform === 'ios' ? '#C7D2FE' :
     '#86EFAC';
 
-  const buildLabel =
-    platform === 'android' && androidFormat
-      ? androidFormat.toUpperCase()
-      : buildType
-        ? buildType.charAt(0).toUpperCase() + buildType.slice(1)
-        : 'Build';
-
-  const lastBuild = triggeredAt
-    ? formatDistanceToNow(new Date(triggeredAt), { addSuffix: true })
-    : 'Never';
-
   return (
-    <div style={{ ...cardStyles.card, flexDirection: 'column', alignItems: 'stretch', gap: '0' }}>
+    <div style={{ ...cardStyles.card, flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
+
+      {/* ── Card Header Row ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <div style={cardStyles.leftSection}>
-        <div style={cardStyles.titleRow}>
-          <span style={cardStyles.repoName}>{repositoryName}</span>
-          <span style={{
-            ...cardStyles.platformBadge,
-            color: platformColor,
-            background: platformBg,
-          }}>
-            {platformLabel}
-          </span>
+        <div style={cardStyles.leftSection}>
+          <div style={cardStyles.titleRow}>
+            <span style={cardStyles.repoName}>{repositoryName}</span>
+            <span style={{ ...cardStyles.platformBadge, color: platformColor, background: platformBg }}>
+              {platformLabel}
+            </span>
+          </div>
+          <div style={cardStyles.fullName}>{repositoryFullName}</div>
         </div>
-        <div style={cardStyles.fullName}>{repositoryFullName}</div>
+
+        <div style={cardStyles.rightSection}>
+          <button
+            onClick={handleOpenSettings}
+            title="Workspace Settings"
+            style={{
+              ...cardStyles.iconBtn,
+              background: settingsOpen ? '#F3F4F6' : 'transparent',
+              border: `1px solid ${settingsOpen ? Colors.cardBorder : Colors.cardBorder}`,
+            }}
+          >
+            <Settings size={17} color={settingsOpen ? Colors.sidebarBrand : '#6B7280'} />
+          </button>
+          <button
+            style={{
+              ...cardStyles.triggerBtn,
+              ...(isIncomplete ? { background: '#6B7280' } : {}),
+            }}
+            onClick={handleTrigger}
+            title={isIncomplete ? 'Incomplete — click to reconfigure in New Build' : 'Open in New Build'}
+          >
+            <Play size={18} color="#ffffff" fill="#ffffff" />
+          </button>
+        </div>
       </div>
 
-      <div style={cardStyles.rightSection}>
-        <button
-          style={cardStyles.settingsBtn}
-          title="Settings"
-          onClick={() => navigate(`/workspaces/${workspace.id}/settings`)}
-        >
-          <Settings size={18} color="#9CA3AF" />
-        </button>
-        <button
-          style={{
-            ...cardStyles.triggerBtn,
-            ...(isIncomplete ? { background: '#6B7280' } : {}),
-            ...(triggering ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
-          }}
-          onClick={handleTrigger}
-          disabled={triggering}
-          title={isIncomplete ? 'Incomplete — click to reconfigure in New Build' : 'Trigger Build'}
-        >
-          <Play size={18} color="#ffffff" fill="#ffffff" />
-        </button>
-      </div>
-      </div>
-      {isIncomplete && (
-        <div style={cardStyles.incompleteNote}>
-          Incomplete — click ▶ to reconfigure
+      {isIncomplete && !settingsOpen && (
+        <div style={cardStyles.incompleteNote}>Incomplete — click ▶ to reconfigure</div>
+      )}
+
+      {/* ── Inline Settings Panel ── */}
+      {settingsOpen && (
+        <div style={cardStyles.settingsPanel}>
+          <div style={cardStyles.settingsDivider} />
+
+          {/* Branch */}
+          <div style={cardStyles.fieldRow}>
+            <label style={cardStyles.fieldLabel}>Branch</label>
+            <input
+              style={cardStyles.textInput}
+              value={draft.branch}
+              onChange={e => setDraft(d => ({ ...d, branch: e.target.value }))}
+              placeholder="e.g. main"
+            />
+          </div>
+
+          {/* Platform */}
+          <div style={cardStyles.fieldRow}>
+            <label style={cardStyles.fieldLabel}>Platform</label>
+            <PillGroup
+              value={draft.platform}
+              onChange={v => setDraft(d => ({ ...d, platform: v }))}
+              options={[
+                { value: 'android', label: 'Android' },
+                { value: 'ios', label: 'iOS' },
+                { value: 'both', label: 'Both' },
+              ]}
+            />
+          </div>
+
+          {/* Build Type */}
+          <div style={cardStyles.fieldRow}>
+            <label style={cardStyles.fieldLabel}>Build Type</label>
+            <PillGroup
+              value={draft.buildType}
+              onChange={v => setDraft(d => ({ ...d, buildType: v }))}
+              options={[
+                { value: 'testing', label: 'Testing' },
+                { value: 'uat', label: 'UAT' },
+                { value: 'playstore', label: 'Playstore' },
+              ]}
+            />
+          </div>
+
+          {/* Android Format — only when platform includes android */}
+          {(draft.platform === 'android' || draft.platform === 'both') && (
+            <div style={cardStyles.fieldRow}>
+              <label style={cardStyles.fieldLabel}>Android Format</label>
+              <PillGroup
+                value={draft.androidFormat}
+                onChange={v => setDraft(d => ({ ...d, androidFormat: v }))}
+                options={[
+                  { value: 'apk', label: 'APK' },
+                  { value: 'aab', label: 'AAB' },
+                ]}
+              />
+            </div>
+          )}
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+            <button onClick={() => setSettingsOpen(false)} style={cardStyles.cancelBtn}>
+              <X size={14} style={{ marginRight: 4 }} /> Cancel
+            </button>
+            <button onClick={handleSave} style={cardStyles.saveBtn}>
+              <Check size={14} style={{ marginRight: 4 }} /> Save
+            </button>
+          </div>
         </div>
       )}
+
     </div>
   );
 }
@@ -250,11 +351,11 @@ const cardStyles = {
   repoName: {
     ...Fonts.Bold,
     fontSize: '24px',
-    fontWeight: '700',
+    fontWeight: '500',
     color: '#111827',
   },
   platformBadge: {
-    fontSize: '12px',
+    fontSize: '7px',
     fontWeight: '600',
     padding: '0 12px',
     height: '24px',
@@ -265,7 +366,7 @@ const cardStyles = {
     alignItems: 'center',
   },
   fullName: {
-    fontSize: '15px',
+    fontSize: '13px',
     fontWeight: '500',
     color: '#6B7280',
   },
@@ -275,17 +376,17 @@ const cardStyles = {
     gap: '12px',
     flexShrink: 0,
   },
-  settingsBtn: {
+  iconBtn: {
     width: '40px',
     height: '40px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: '#FFFFFF',
     border: `1px solid ${Colors.cardBorder}`,
     borderRadius: '10px',
     cursor: 'pointer',
     padding: 0,
+    transition: 'background 0.15s',
   },
   triggerBtn: {
     width: '40px',
@@ -305,6 +406,64 @@ const cardStyles = {
     color: '#9CA3AF',
     paddingLeft: '2px',
   },
+  settingsPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+  },
+  settingsDivider: {
+    height: '1px',
+    background: Colors.cardBorder,
+    margin: '4px 0 2px',
+  },
+  fieldRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+  },
+  fieldLabel: {
+    fontSize: '13px',
+    fontWeight: '500',
+    color: '#374151',
+    width: '120px',
+    flexShrink: 0,
+  },
+  textInput: {
+    flex: 1,
+    maxWidth: '260px',
+    padding: '6px 10px',
+    fontSize: '13px',
+    border: `1px solid ${Colors.cardBorder}`,
+    borderRadius: '8px',
+    outline: 'none',
+    color: '#111827',
+    background: '#F9FAFB',
+    ...Fonts.Regular,
+  },
+  cancelBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '7px 16px',
+    fontSize: '13px',
+    fontWeight: '500',
+    border: `1px solid ${Colors.cardBorder}`,
+    borderRadius: '8px',
+    background: '#fff',
+    color: '#374151',
+    cursor: 'pointer',
+  },
+  saveBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '7px 16px',
+    fontSize: '13px',
+    fontWeight: '600',
+    border: 'none',
+    borderRadius: '8px',
+    background: Colors.sidebarBrand,
+    color: '#fff',
+    cursor: 'pointer',
+  },
 };
 
 const styles = {
@@ -317,10 +476,10 @@ const styles = {
   },
   headerTitle: {
     fontFamily: 'Google Sans, sans-serif',
-    fontSize: '32px',
+    fontSize: '24px',
     fontWeight: '700',
     lineHeight: '1.1',
-    color: '#0f172a',
+    color: '#1E293B',
     letterSpacing: '-0.02em',
     margin: 0,
   },
@@ -328,7 +487,7 @@ const styles = {
     fontFamily: 'Google Sans, sans-serif',
     fontSize: '14px',
     fontWeight: '400',
-    color: '#94A3B8',
+    color: '#5F6368',
     margin: '6px 0 0 0',
   },
   contentColumn: {

@@ -11,6 +11,8 @@ import HistoryPage from './pages/HistoryPage.jsx';
 import WorkspacePage from './pages/WorkspacePage.jsx';
 import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage.jsx';
 import AnalyticsPage from './pages/AnalyticsPage.jsx';
+import RepositoriesPage from './pages/RepositoriesPage.jsx';
+import ErrorMonitorPage from './pages/ErrorMonitorPage.jsx';
 
 function PrivateRoute({ children }) {
   const { user, initialized } = useSelector(s => s.auth);
@@ -40,8 +42,10 @@ export default function App() {
         <Route path="build" element={<BuildPage />} />
         <Route path="history" element={<HistoryPage />} />
         <Route path="workspaces" element={<WorkspacePage />} />
-        <Route path="workspaces/:workspaceId/settings" element={<WorkspaceSettingsPage />} />
+        <Route path="workspace/:workspaceId/settings" element={<WorkspaceSettingsPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="repositories" element={<RepositoriesPage />} />
+        <Route path="error-monitor" element={<ErrorMonitorPage />} />
       </Route>
     </Routes>
   );
