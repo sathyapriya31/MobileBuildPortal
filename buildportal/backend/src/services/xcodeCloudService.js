@@ -40,7 +40,7 @@ export function generateAppStoreConnectToken(appleCreds) {
   }
 
   const now = Math.round((new Date()).getTime() / 1000);
-  
+
   const payload = {
     iss: issuerId,
     iat: now,
@@ -76,7 +76,7 @@ export function parseRepoUrl(url) {
   let cleanUrl = url.trim().replace(/\.git$/, '');
   let host = '';
   let path = '';
-  
+
   if (cleanUrl.startsWith('git@')) {
     const parts = cleanUrl.substring(4).split(':');
     host = parts[0];
@@ -86,7 +86,7 @@ export function parseRepoUrl(url) {
     host = urlObj.hostname;
     path = urlObj.pathname.substring(1);
   }
-  
+
   return { host, path };
 }
 
@@ -112,15 +112,15 @@ export async function triggerXcodeCloudBuild({ repoUrl, branch, config, appleCre
   await logCallback('info', 'Connecting to App Store Connect. Fetching SCM Repositories...');
   const reposRes = await axios.get(`${ASC_BASE_URL}/scmRepositories`, { headers });
   const repos = reposRes.data?.data || [];
-  
-  const matchedRepo = repos.find(r => 
+
+  const matchedRepo = repos.find(r =>
     matchRepoUrls(r.attributes?.httpCloneUrl, repoUrl) ||
     matchRepoUrls(r.attributes?.sshCloneUrl, repoUrl)
   );
   if (!matchedRepo) {
     throw new Error(`No matching SCM repository found in App Store Connect for: ${repoUrl}. Please ensure your repository is connected to Xcode Cloud.`);
   }
-  
+
   const repoId = matchedRepo.id;
   await logCallback('info', `Found SCM Repository ID: ${repoId} matching ${repoUrl}`);
 
@@ -128,14 +128,14 @@ export async function triggerXcodeCloudBuild({ repoUrl, branch, config, appleCre
   await logCallback('info', `Resolving SCM Git Reference for branch: "${branch}"...`);
   const refsRes = await axios.get(`${ASC_BASE_URL}/scmRepositories/${repoId}/gitReferences`, { headers });
   const refs = refsRes.data?.data || [];
-  
+
   // Find branch matching branch name
-  const matchedRef = refs.find(r => 
-    r.attributes?.name === branch || 
+  const matchedRef = refs.find(r =>
+    r.attributes?.name === branch ||
     r.attributes?.canonicalName === `refs/heads/${branch}` ||
     r.attributes?.canonicalName?.endsWith(`/${branch}`)
   );
-  
+
   if (!matchedRef) {
     throw new Error(`SCM Git Reference for branch "${branch}" was not found in App Store Connect. Please ensure the branch is pushed to origin.`);
   }
@@ -147,7 +147,7 @@ export async function triggerXcodeCloudBuild({ repoUrl, branch, config, appleCre
   await logCallback('info', 'Locating associated Xcode Cloud Product...');
   const productsRes = await axios.get(`${ASC_BASE_URL}/ciProducts?include=app,primaryRepositories`, { headers });
   const products = productsRes.data?.data || [];
-  
+
   const matchedProduct = products.find(p => {
     const repos = p.relationships?.primaryRepositories?.data || [];
     return repos.some(r => r.id === repoId);
@@ -234,7 +234,7 @@ export async function triggerXcodeCloudBuild({ repoUrl, branch, config, appleCre
     throw new Error('Failed to trigger Xcode Cloud build run: App Store Connect returned an empty response.');
   }
 
-  const xcodeCloudUrl = `https://appstoreconnect.apple.com/apps/${appId}/xcodecloud/workflows/${workflowId}/runs/${buildRun.id}`;
+  const xcodeCloudUrl = `https://appstoreconnect.apple.com/apps/${appId}/ci/builds/${buildRun.id}`;
   await logCallback('info', `🎉 Xcode Cloud Build Run successfully triggered! Build Run ID: ${buildRun.id}`);
   return {
     buildRunId: buildRun.id,
@@ -275,8 +275,8 @@ export async function pollXcodeCloudBuild(buildRunId, logCallback, appleCreds) {
       const completionStatus = buildRun.attributes?.completionStatus; // SUCCEEDED, FAILED, ERRORED, CANCELED
       const buildNumber = buildRun.attributes?.number;
 
-      const statusStr = `Xcode Cloud Progress: [${progress || 'UNKNOWN'}]` + 
-        (completionStatus ? ` | Completion: [${completionStatus}]` : '') + 
+      const statusStr = `Xcode Cloud Progress: [${progress || 'UNKNOWN'}]` +
+        (completionStatus ? ` | Completion: [${completionStatus}]` : '') +
         (buildNumber ? ` | Xcode Cloud Build #${buildNumber}` : '');
 
       if (statusStr !== lastStatus) {
