@@ -13,7 +13,7 @@ const NAV = [
   { to: '/build', label: 'New Build', icon: PlusCircle },
   { to: '/history', label: 'Build History', icon: History },
   { to: '/workspace', label: 'Connected workspace', icon: Link2 },
-  { to: '#', label: 'Analytical', icon: BarChart2 },
+  { to: '/analytics', label: 'Analytical', icon: BarChart2 },
 ];
 
 export default function DashboardLayout() {

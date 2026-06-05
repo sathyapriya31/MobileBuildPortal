@@ -370,7 +370,7 @@ export default function BuildPage() {
                             width: '100%'
                           }}
                         >
-                          <GitBranch size={20} style={{ color: isSelected ? '#0c5df4' : '#5f6368', marginRight: '12px', flexShrink: 0 }} />
+                          {/* <GitBranch size={20} style={{ color: isSelected ? '#0c5df4' : '#5f6368', marginRight: '12px', flexShrink: 0 }} /> */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
                             <span style={{ fontSize: '14px', ...Fonts.Bold, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {r.name}
