@@ -4,6 +4,7 @@ import { join } from 'path';
 import axios from 'axios';
 
 const ASC_BASE_URL = 'https://api.appstoreconnect.apple.com/v1';
+axios.defaults.timeout = 15000; // Prevent indefinite hangs on App Store Connect and other API calls
 
 /**
  * Generates an Apple App Store Connect JWT token signed with ES256.
@@ -302,3 +303,104 @@ export async function pollXcodeCloudBuild(buildRunId, logCallback, appleCreds) {
     throw new Error('Xcode Cloud build polling timed out after 30 minutes.');
   }
 }
+
+/**
+ * Updates the TestFlight beta build localization (en-US whatsNew) with the custom release notes.
+ * 
+ * @param {string} buildRunId - Xcode Cloud build run ID
+ * @param {string} releaseNotes - Custom release notes content
+ * @param {function} logCallback - Function to write logs and socket events
+ * @param {object} appleCreds - Decrypted App Store Connect API credentials
+ */
+export async function updateXcodeCloudReleaseNotes(buildRunId, releaseNotes, logCallback, appleCreds) {
+  if (!releaseNotes || releaseNotes.trim() === '') {
+    await logCallback('info', 'No release notes specified. Skipping TestFlight release notes update.');
+    return;
+  }
+
+  await logCallback('info', `Initiating TestFlight release notes update for Xcode Cloud Run: ${buildRunId}`);
+  const token = generateAppStoreConnectToken(appleCreds);
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  };
+
+  // 1. Fetch build associated with the Xcode Cloud build run
+  let buildId = null;
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      const buildsRes = await axios.get(`${ASC_BASE_URL}/ciBuildRuns/${buildRunId}/builds`, { headers });
+      const buildsData = buildsRes.data?.data || [];
+      if (buildsData.length > 0) {
+        buildId = buildsData[0].id;
+        await logCallback('info', `Found App Store Connect Build ID: ${buildId} associated with build run.`);
+        break;
+      }
+    } catch (err) {
+      await logCallback('warn', `Attempt ${attempt}: Failed to fetch associated build: ${err.message}`);
+    }
+    if (attempt < 6) {
+      await logCallback('info', 'Waiting 10 seconds for App Store Connect to register and link the build object...');
+      await new Promise(resolve => setTimeout(resolve, 10000));
+    }
+  }
+
+  if (!buildId) {
+    await logCallback('warn', 'Could not locate the associated build in App Store Connect. Release notes update skipped.');
+    return;
+  }
+
+  // 2. Fetch existing beta build localizations for this build
+  let localizationId = null;
+  try {
+    const localizationsRes = await axios.get(`${ASC_BASE_URL}/builds/${buildId}/betaBuildLocalizations`, { headers });
+    const localizations = localizationsRes.data?.data || [];
+    const enLocalization = localizations.find(l => l.attributes?.locale === 'en-US');
+    if (enLocalization) {
+      localizationId = enLocalization.id;
+    }
+  } catch (err) {
+    await logCallback('warn', `Failed to fetch existing localizations: ${err.message}`);
+  }
+
+  // 3. Create or update localization
+  try {
+    if (localizationId) {
+      await logCallback('info', `Updating existing beta build localization (${localizationId}) with release notes...`);
+      await axios.patch(`${ASC_BASE_URL}/betaBuildLocalizations/${localizationId}`, {
+        data: {
+          type: 'betaBuildLocalizations',
+          id: localizationId,
+          attributes: {
+            whatsNew: releaseNotes
+          }
+        }
+      }, { headers });
+    } else {
+      await logCallback('info', 'Creating new beta build localization for en-US with release notes...');
+      await axios.post(`${ASC_BASE_URL}/betaBuildLocalizations`, {
+        data: {
+          type: 'betaBuildLocalizations',
+          attributes: {
+            whatsNew: releaseNotes,
+            locale: 'en-US'
+          },
+          relationships: {
+            build: {
+              data: {
+                type: 'builds',
+                id: buildId
+              }
+            }
+          }
+        }
+      }, { headers });
+    }
+    await logCallback('info', '✅ TestFlight release notes successfully updated!');
+  } catch (err) {
+    const apiErr = err.response?.data?.errors?.[0];
+    const detail = apiErr ? `${apiErr.title} - ${apiErr.detail}` : err.message;
+    await logCallback('warn', `Failed to update TestFlight release notes: ${detail}`);
+  }
+}
+

@@ -9,7 +9,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import rateLimit from 'express-rate-limit';
 
 import { connectDB } from './config/database.js';
-import { setupBuildQueue } from './services/buildQueue.js';
+import { setupBuildQueue, resumeActiveBuilds } from './services/buildQueue.js';
 import authRoutes from './routes/auth.js';
 import repoRoutes from './routes/repos.js';
 import buildRoutes from './routes/builds.js';
@@ -55,6 +55,7 @@ const PORT = process.env.PORT || 4000;
 async function startServer() {
   await connectDB();
   await setupBuildQueue(io);
+  await resumeActiveBuilds(io);
   httpServer.listen(PORT, () => console.log(`🚀 BuildPortal API on port ${PORT}`));
 }
 startServer();

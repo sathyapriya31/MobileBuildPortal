@@ -6,9 +6,10 @@ import AppleCredential from '../models/AppleCredential.js';
 import { notifySlack } from './slackService.js';
 import { getPresignedUrl, getObjectFromS3 } from './s3Service.js';
 import { parseYaml } from './yamlParser.js';
-import { triggerXcodeCloudBuild, pollXcodeCloudBuild, parseRepoUrl } from './xcodeCloudService.js';
+import { triggerXcodeCloudBuild, pollXcodeCloudBuild, updateXcodeCloudReleaseNotes, parseRepoUrl } from './xcodeCloudService.js';
 
 let buildQueue;
+const activeXcodePolls = new Set();
 
 /**
  * Fetches the buildportal.yml configuration file directly from GitHub/GitLab repository
@@ -78,22 +79,16 @@ async function processXcodeCloudBuild(build, io) {
       throw new Error('Associated user is not authenticated or access token is missing.');
     }
 
-    // Step 1: Fetch and parse yaml configuration
-    await logCallback('info', 'Fetching BuildPortal YAML configuration file from repository...');
-    let rawYaml = '';
-    try {
-      rawYaml = await fetchYamlFromRepo(user, build.repoUrl, build.branch);
-    } catch (fetchErr) {
-      await logCallback('warn', `${fetchErr.message} Proceeding with default Xcode Cloud configurations.`);
-    }
+    let existingBuildRunId = null;
+    let existingAppId = null;
+    let existingXcodeCloudUrl = build.githubRunUrl;
 
-    let parsedConfig = {};
-    if (rawYaml) {
-      try {
-        parsedConfig = parseYaml(String(rawYaml));
-        await logCallback('info', 'Successfully parsed buildportal.yml configuration.');
-      } catch (parseErr) {
-        await logCallback('warn', `Failed to parse YAML config: ${parseErr.message}. Proceeding with default configurations.`);
+    if (build.githubRunUrl && build.githubRunUrl.includes('/ci/builds/')) {
+      const parts = build.githubRunUrl.split('/ci/builds/');
+      existingBuildRunId = parts[1];
+      const appsParts = parts[0].split('/apps/');
+      if (appsParts.length > 1) {
+        existingAppId = appsParts[1].split('/')[0];
       }
     }
 
@@ -126,70 +121,114 @@ async function processXcodeCloudBuild(build, io) {
       await logCallback('warn', `Failed to fetch dynamic Apple credentials: ${credErr.message}. Falling back to default system key.`);
     }
 
-    // Step 2: Trigger build on Xcode Cloud
-    const triggerResult = await triggerXcodeCloudBuild({
-      repoUrl: build.repoUrl,
-      branch: build.branch,
-      config: parsedConfig,
-      appleCreds
-    }, logCallback);
-    // Save the Xcode Cloud URL immediately so the user can click it!
-    const freshBuild = await Build.findById(buildId);
-    if (freshBuild) {
-      freshBuild.githubRunUrl = triggerResult.xcodeCloudUrl;
-      await freshBuild.save();
-      io.to(`build:${buildId}`).emit('build:status', { buildId, status: freshBuild.status, githubRunUrl: triggerResult.xcodeCloudUrl });
+    let triggerResult;
+    if (existingBuildRunId && existingAppId) {
+      await logCallback('info', `Detected existing Xcode Cloud Build Run: ${existingBuildRunId}. Resuming polling...`);
+      triggerResult = {
+        buildRunId: existingBuildRunId,
+        appId: existingAppId,
+        xcodeCloudUrl: existingXcodeCloudUrl
+      };
+    } else {
+      // Step 1: Fetch and parse yaml configuration
+      await logCallback('info', 'Fetching BuildPortal YAML configuration file from repository...');
+      let rawYaml = '';
+      try {
+        rawYaml = await fetchYamlFromRepo(user, build.repoUrl, build.branch);
+      } catch (fetchErr) {
+        await logCallback('warn', `${fetchErr.message} Proceeding with default Xcode Cloud configurations.`);
+      }
+
+      let parsedConfig = {};
+      if (rawYaml) {
+        try {
+          parsedConfig = parseYaml(String(rawYaml));
+          await logCallback('info', 'Successfully parsed buildportal.yml configuration.');
+        } catch (parseErr) {
+          await logCallback('warn', `Failed to parse YAML config: ${parseErr.message}. Proceeding with default configurations.`);
+        }
+      }
+
+      // Step 2: Trigger build on Xcode Cloud
+      triggerResult = await triggerXcodeCloudBuild({
+        repoUrl: build.repoUrl,
+        branch: build.branch,
+        config: parsedConfig,
+        appleCreds
+      }, logCallback);
+      // Save the Xcode Cloud URL immediately so the user can click it!
+      const freshBuild = await Build.findById(buildId);
+      if (freshBuild) {
+        freshBuild.githubRunUrl = triggerResult.xcodeCloudUrl;
+        await freshBuild.save();
+        io.to(`build:${buildId}`).emit('build:status', { buildId, status: freshBuild.status, githubRunUrl: triggerResult.xcodeCloudUrl });
+      }
     }
 
     await logCallback('info', `Monitor progress at: ${triggerResult.xcodeCloudUrl}`);
 
     // Step 3: Start polling
-    await logCallback('info', 'Started polling Xcode Cloud build run status...');
-    const pollResult = await pollXcodeCloudBuild(triggerResult.buildRunId, logCallback, appleCreds);
+    if (activeXcodePolls.has(triggerResult.buildRunId)) {
+      await logCallback('info', `Xcode Cloud Build Run ${triggerResult.buildRunId} is already being monitored. Skipping duplicate poll.`);
+      return;
+    }
+    activeXcodePolls.add(triggerResult.buildRunId);
 
-    if (pollResult.status === 'success') {
-      await logCallback('info', 'Xcode Cloud Build SUCCEEDED!');
+    try {
+      await logCallback('info', 'Started polling Xcode Cloud build run status...');
+      const pollResult = await pollXcodeCloudBuild(triggerResult.buildRunId, logCallback, appleCreds);
 
-      const freshBuild = await Build.findById(buildId);
-      freshBuild.status = freshBuild.platform === 'both' && freshBuild.status === 'building'
-        ? 'building' // keep building if android is still compiling
-        : 'success';
+      if (pollResult.status === 'success') {
+        await logCallback('info', 'Xcode Cloud Build SUCCEEDED!');
 
-      freshBuild.finishedAt = new Date();
-      freshBuild.duration = freshBuild.startedAt ? Math.floor((new Date() - freshBuild.startedAt) / 1000) : 0;
+        const freshBuild = await Build.findById(buildId);
+        if (freshBuild) {
+          if (freshBuild.releaseNotes) {
+            await updateXcodeCloudReleaseNotes(triggerResult.buildRunId, freshBuild.releaseNotes, logCallback, appleCreds);
+          }
+          freshBuild.status = freshBuild.platform === 'both' && freshBuild.status === 'building'
+            ? 'building' // keep building if android is still compiling
+            : 'success';
 
-      const testFlightLink = `https://appstoreconnect.apple.com/apps/${triggerResult.appId}/testflight`;
-      freshBuild.artifacts.ios = {
-        testFlightLink,
-        fileName: `Xcode Cloud Build #${pollResult.buildNumber || ''}`,
-        size: 0
-      };
+          freshBuild.finishedAt = new Date();
+          freshBuild.duration = freshBuild.startedAt ? Math.floor((new Date() - freshBuild.startedAt) / 1000) : 0;
 
-      await freshBuild.save();
-      await logCallback('info', `TestFlight Link generated and saved: ${testFlightLink}`);
+          const testFlightLink = `https://appstoreconnect.apple.com/apps/${triggerResult.appId}/testflight`;
+          freshBuild.artifacts.ios = {
+            testFlightLink,
+            fileName: `Xcode Cloud Build #${pollResult.buildNumber || ''}`,
+            size: 0
+          };
 
-      // Emit complete
-      io.to(`build:${buildId}`).emit('build:complete', {
-        buildId,
-        status: freshBuild.status,
-        artifacts: freshBuild.artifacts,
-        duration: freshBuild.duration
-      });
+          await freshBuild.save();
+          await logCallback('info', `TestFlight Link generated and saved: ${testFlightLink}`);
 
-      // Send slack notifications
-      try {
-        await notifySlack({
-          buildId,
-          projectName: freshBuild.projectName,
-          branch: freshBuild.branch,
-          platform: 'ios',
-          s3Link: testFlightLink
-        });
-      } catch (slackErr) {
-        console.error('Slack notification failed:', slackErr.message);
+          // Emit complete
+          io.to(`build:${buildId}`).emit('build:complete', {
+            buildId,
+            status: freshBuild.status,
+            artifacts: freshBuild.artifacts,
+            duration: freshBuild.duration
+          });
+
+          // Send slack notifications
+          try {
+            await notifySlack({
+              buildId,
+              projectName: freshBuild.projectName,
+              branch: freshBuild.branch,
+              platform: 'ios',
+              s3Link: testFlightLink
+            });
+          } catch (slackErr) {
+            console.error('Slack notification failed:', slackErr.message);
+          }
+        }
+      } else {
+        throw new Error(pollResult.error || 'Xcode Cloud build run failed.');
       }
-    } else {
-      throw new Error(pollResult.error || 'Xcode Cloud build run failed.');
+    } finally {
+      activeXcodePolls.delete(triggerResult.buildRunId);
     }
   } catch (err) {
     const errorMsg = err.message || String(err);
@@ -473,4 +512,108 @@ export async function setupBuildQueue(io) {
 
 export async function enqueueBuild(buildId) {
   return buildQueue.add({ buildId }, { jobId: buildId });
+}
+
+export async function resumeActiveBuilds(io) {
+  try {
+    const activeBuilds = await Build.find({ status: 'building' }).populate('userId');
+    if (activeBuilds.length === 0) return;
+    
+    console.log(`🔍 Found ${activeBuilds.length} active builds to check on startup.`);
+
+    for (const build of activeBuilds) {
+      const buildId = String(build._id);
+      if (build.platform === 'ios' || build.platform === 'both') {
+        const githubRunUrl = build.githubRunUrl;
+        if (githubRunUrl && githubRunUrl.includes('/ci/builds/')) {
+          const buildRunId = githubRunUrl.split('/ci/builds/')[1];
+          console.log(`🔄 Resuming polling for Xcode Cloud Build: ${buildId} (Run ID: ${buildRunId})`);
+          
+          (async () => {
+            const logCallback = async (level, message) => {
+              const freshBuild = await Build.findById(buildId);
+              if (freshBuild) {
+                freshBuild.logs.push({ timestamp: new Date(), level, message });
+                await freshBuild.save();
+              }
+              io.to(`build:${buildId}`).emit('build:log', { buildId, level, message, timestamp: new Date() });
+            };
+
+            if (activeXcodePolls.has(buildRunId)) {
+              await logCallback('info', `Xcode Cloud Build Run ${buildRunId} is already being monitored. Skipping duplicate poll.`);
+              return;
+            }
+            activeXcodePolls.add(buildRunId);
+
+            try {
+              let appleCreds = null;
+              const appleKey = await AppleCredential.findOne({ userId: build.userId._id || build.userId, projectId: build.projectId });
+              if (appleKey) {
+                const s3Stream = await getObjectFromS3(appleKey.p8KeyS3Key);
+                const privateKey = await new Promise((resolve, reject) => {
+                  const chunks = [];
+                  s3Stream.on('data', chunk => chunks.push(chunk));
+                  s3Stream.on('error', reject);
+                  s3Stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+                });
+                appleCreds = { apiKeyId: appleKey.apiKeyId, apiIssuer: appleKey.apiIssuer, privateKey };
+              }
+
+              const pollResult = await pollXcodeCloudBuild(buildRunId, logCallback, appleCreds);
+              if (pollResult.status === 'success') {
+                await logCallback('info', 'Xcode Cloud Build SUCCEEDED!');
+                const freshBuild = await Build.findById(buildId);
+                if (freshBuild) {
+                  if (freshBuild.releaseNotes) {
+                    await updateXcodeCloudReleaseNotes(buildRunId, freshBuild.releaseNotes, logCallback, appleCreds);
+                  }
+                  freshBuild.status = freshBuild.platform === 'both' && freshBuild.status === 'building' ? 'building' : 'success';
+                  freshBuild.finishedAt = new Date();
+                  freshBuild.duration = freshBuild.startedAt ? Math.floor((new Date() - freshBuild.startedAt) / 1000) : 0;
+                  const appId = githubRunUrl.split('/apps/')[1].split('/')[0];
+                  const testFlightLink = `https://appstoreconnect.apple.com/apps/${appId}/testflight`;
+                  freshBuild.artifacts.ios = {
+                    testFlightLink,
+                    fileName: `Xcode Cloud Build #${pollResult.buildNumber || ''}`,
+                    size: 0
+                  };
+                  await freshBuild.save();
+                  await logCallback('info', `TestFlight Link generated and saved: ${testFlightLink}`);
+                  io.to(`build:${buildId}`).emit('build:complete', {
+                    buildId,
+                    status: freshBuild.status,
+                    artifacts: freshBuild.artifacts,
+                    duration: freshBuild.duration
+                  });
+                  try {
+                    await notifySlack({ buildId, projectName: freshBuild.projectName, branch: freshBuild.branch, platform: 'ios', s3Link: testFlightLink });
+                  } catch (slackErr) {
+                    console.error('Slack notification failed:', slackErr.message);
+                  }
+                }
+              } else {
+                throw new Error(pollResult.error || 'Xcode Cloud build run failed.');
+              }
+            } catch (err) {
+              const errorMsg = err.message || String(err);
+              await logCallback('error', errorMsg);
+              const freshBuild = await Build.findById(buildId);
+              if (freshBuild) {
+                freshBuild.status = 'failed';
+                freshBuild.error = errorMsg;
+                freshBuild.finishedAt = new Date();
+                freshBuild.duration = freshBuild.startedAt ? Math.floor((new Date() - freshBuild.startedAt) / 1000) : 0;
+                await freshBuild.save();
+              }
+              io.to(`build:${buildId}`).emit('build:status', { buildId, status: 'failed', error: errorMsg });
+            } finally {
+              activeXcodePolls.delete(buildRunId);
+            }
+          })();
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to resume active builds:', err.message);
+  }
 }

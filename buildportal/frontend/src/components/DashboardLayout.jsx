@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../store/slices/authSlice.js';
-import { PlusCircle, ClipboardList, Link2, BarChart2, Settings, FileText, LogOut, History } from 'lucide-react';
+import { PlusCircle, ClipboardList, Link2, BarChart2, FileText, LogOut, History } from 'lucide-react';
 import { api } from '../services/api.js';
 import { disconnectSocket } from '../services/socket.js';
 import spritleLogo from '../assets/SPRITLE  Logo SVG.svg';
@@ -105,14 +105,21 @@ export default function DashboardLayout() {
         </div>
         <div style={styles.sidebarBottom}>
           <div style={styles.bottomNav}>
-            <a href="#settings" onClick={(e) => e.preventDefault()} style={styles.bottomNavItem}>
-              <Settings size={18} style={{ color: '#64748b' }} />
-              <span>Settings</span>
-            </a>
-            <a href="#documentation" onClick={(e) => e.preventDefault()} style={styles.bottomNavItem}>
-              <FileText size={18} style={{ color: '#64748b' }} />
-              <span>Documentation</span>
-            </a>
+            <NavLink
+              to="/documentation"
+              style={({ isActive }) => ({
+                ...styles.bottomNavItem,
+                textDecoration: 'none',
+                ...(isActive ? styles.navActive : {})
+              })}
+            >
+              {({ isActive }) => (
+                <>
+                  <FileText size={18} style={{ color: isActive ? Colors.sidebarActiveText : '#64748b' }} />
+                  <span style={{ fontWeight: isActive ? '700' : 'normal' }}>Documentation</span>
+                </>
+              )}
+            </NavLink>
             <button onClick={handleLogout} style={styles.bottomNavItem}>
               <LogOut size={18} style={{ color: '#64748b' }} />
               <span>Logout</span>

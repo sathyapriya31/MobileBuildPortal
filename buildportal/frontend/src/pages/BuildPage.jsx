@@ -226,9 +226,9 @@ export default function BuildPage() {
 
   const handleBuild = async () => {
     if (!selectedRepo || !branch) return toast.error('Select a repo and branch');
-    if (platform === 'android' && buildType === 'playstore' && !versionCode) return toast.error('Enter a version code for Play Store builds');
+    if (platform === 'android' && buildType === 'release' && !versionCode) return toast.error('Enter a version code for Play Store builds');
 
-    const isAndroidPlaystore = platform === 'android' && buildType === 'playstore';
+    const isAndroidPlaystore = platform === 'android' && buildType === 'release';
     const result = await dispatch(triggerBuild({
       projectId: selectedRepo.id,
       projectName: selectedRepo.name,
@@ -239,7 +239,7 @@ export default function BuildPage() {
       androidFormat: (platform === 'android' || platform === 'both') ? androidFormat : undefined,
       versionName: isAndroidPlaystore ? versionName : undefined,
       buildType,
-      releaseNotes: isAndroidPlaystore ? releaseNotes : undefined,
+      releaseNotes: (isAndroidPlaystore || platform === 'ios' || platform === 'both') ? releaseNotes : undefined,
       versionCode: isAndroidPlaystore ? versionCode : undefined,
     }));
     if (triggerBuild.fulfilled.match(result)) {
@@ -850,6 +850,12 @@ export default function BuildPage() {
                     <div style={{ position: 'absolute', top: '20px', right: '20px', width: '18px', height: '18px', borderRadius: '50%', backgroundColor: '#00875a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Check size={11} color="#ffffff" strokeWidth={3} />
                     </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '12px' }}>
+                    <span style={{ fontSize: '11px', ...Fonts.Bold, color: '#5f6368', letterSpacing: '0.5px' }}>RELEASE NOTES</span>
+                    <textarea placeholder="Describe what's new in this build for TestFlight..." value={releaseNotes} onChange={e => setReleaseNotes(e.target.value)}
+                      style={{ height: '80px', backgroundColor: '#f8fafc', border: '1px solid #dadce0', borderRadius: '8px', padding: '10px 12px', fontSize: '13px', color: '#1e293b', resize: 'none', outline: 'none', ...Fonts.Regular }} />
                   </div>
                 </div>
 
