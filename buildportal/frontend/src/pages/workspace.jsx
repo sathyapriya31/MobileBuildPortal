@@ -343,11 +343,17 @@ export default function WorkspacePage() {
                     >
                       <Settings size={18} />
                     </button>
-                    <button
+                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         const latestBuild = latestBuilds[ws.id];
                         if (latestBuild) {
+                          // Suggest reusing the same buildNumber/versionCode if last build failed or was cancelled.
+                          // Otherwise, increment by 1.
+                          let suggestedVersionCode = latestBuild.buildNumber || '';
+                          if (latestBuild.status !== 'failed' && latestBuild.status !== 'cancelled' && latestBuild.buildNumber) {
+                            suggestedVersionCode = latestBuild.buildNumber + 1;
+                          }
                           const params = new URLSearchParams({
                             repo: ws.repo,
                             branch: latestBuild.branch,
@@ -355,7 +361,7 @@ export default function WorkspacePage() {
                             buildType: latestBuild.buildType,
                             androidFormat: latestBuild.androidFormat || '',
                             versionName: latestBuild.versionName || '',
-                            versionCode: latestBuild.versionCode || '',
+                            versionCode: String(suggestedVersionCode),
                             releaseNotes: latestBuild.releaseNotes || ''
                           });
                           navigate(`/build?${params.toString()}`);

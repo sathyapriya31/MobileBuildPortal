@@ -16,6 +16,20 @@ export async function triggerBuild(req, res) {
   // Keystore is optional when using GitHub Actions — GHA workflows handle signing via repo secrets.
   // We still look it up so the agent/GHA dispatcher can attach it if available.
 
+  let calculatedBuildNumber = 1;
+  if (versionCode) {
+    calculatedBuildNumber = parseInt(versionCode);
+  } else {
+    const latestBuild = await Build.findOne({ projectId }).sort({ createdAt: -1 });
+    if (latestBuild) {
+      if (latestBuild.status === 'failed' || latestBuild.status === 'cancelled') {
+        calculatedBuildNumber = latestBuild.buildNumber || 1;
+      } else {
+        calculatedBuildNumber = (latestBuild.buildNumber || 1) + 1;
+      }
+    }
+  }
+
   const build = await Build.create({
     userId: req.user._id,
     projectId,
@@ -28,7 +42,7 @@ export async function triggerBuild(req, res) {
     versionName: versionName || '1.0.0',
     buildType: buildType || 'testing',
     releaseNotes: releaseNotes || '',
-    buildNumber: versionCode ? parseInt(versionCode) : ++buildCounter,
+    buildNumber: calculatedBuildNumber,
     status: 'queued',
     logs: [{ timestamp: new Date(), level: 'info', message: 'Build queued' }],
   });
