@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Ban
 } from 'lucide-react';
+import { PieChart, Pie, Cell } from 'recharts';
 
 const SkeletonMetric = () => (
   <div style={{
@@ -201,18 +202,8 @@ export default function AnalyticsPage() {
 
   // Platform Donut calculation
   const totalBuilds = platformDistribution.totalBuilds || 0;
-  const androidCount = platformDistribution.androidCount || 0;
-  const iosCount = platformDistribution.iosCount || 0;
   const androidPercent = platformDistribution.androidPercent || 50;
   const iosPercent = platformDistribution.iosPercent || 50;
-
-  // Render donut SVG paths
-  const radius = 60;
-  const strokeWidth = 12;
-  const circ = 2 * Math.PI * radius;
-  const androidStroke = (androidPercent / 100) * circ;
-  const iosStroke = (iosPercent / 100) * circ;
-  const iosOffset = circ - androidStroke;
 
   // Calculate dynamic regional latency based on API response ping
   const latencies = {
@@ -436,7 +427,6 @@ export default function AnalyticsPage() {
                 color: '#3c4043', cursor: 'pointer'
               }}>
                 <span>Last 7 Days</span>
-                {/* <ChevronDown size={13} style={{ color: '#5f6368' }} /> */}
               </div>
             </div>
 
@@ -448,8 +438,8 @@ export default function AnalyticsPage() {
                   const maxDuration = Math.max(...dailyAverages.map(d => d.avgDuration), 1);
                   const barHeightPercent = dayData.totalBuilds === 0 ? 0 : Math.max(10, (dayData.avgDuration / maxDuration) * 90);
                   const isHighlighted = dayData.day === activeDay;
-                  const hoverColor = isHighlighted ? '#0644b4' : '#b2daf8';
-                  const baseColor = isHighlighted ? '#0c5df4' : '#d2e9fc';
+                  const hoverColor = isHighlighted ? '#0644b4' : '#9cc9ebff';
+                  const baseColor = isHighlighted ? '#0c5df4' : '#9cc9ebff';
 
                   return (
                     <div
@@ -520,56 +510,55 @@ export default function AnalyticsPage() {
               <span style={{ fontSize: 12, color: Colors.textMuted }}>Build volume by OS</span>
             </div>
 
-            {/* SVG Donut Chart */}
-            <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', position: 'relative', minHeight: 140 }}>
-              <svg width="150" height="150" viewBox="0 0 150 150">
-                {/* Background circle */}
-                <circle cx="75" cy="75" r={radius} fill="transparent" stroke="#f1f5f9" strokeWidth={strokeWidth} />
+            {/* Recharts Donut Chart */}
+            <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', position: 'relative', minHeight: 160 }}>
+              <PieChart width={160} height={160}>
+                <Pie
+                  data={[
+                    { name: 'Android', value: androidPercent },
+                    { name: 'iOS', value: iosPercent }
+                  ]}
+                  cx={75}
+                  cy={75}
+                  innerRadius={52}
+                  outerRadius={72}
+                  startAngle={90}
+                  endAngle={-270}
+                  dataKey="value"
+                  strokeWidth={0}
+                  paddingAngle={3}
+                >
+                  <Cell fill="#22863a" />
+                  <Cell fill="#0c5df4" />
+                </Pie>
+              </PieChart>
 
-                {/* Android (Green) Path */}
-                <circle
-                  cx="75" cy="75" r={radius} fill="transparent"
-                  stroke="#10b981" strokeWidth={strokeWidth}
-                  strokeDasharray={`${androidStroke} ${circ}`}
-                  transform="rotate(-90 75 75)"
-                  strokeLinecap="round"
-                />
-
-                {/* iOS (Blue) Path */}
-                <circle
-                  cx="75" cy="75" r={radius} fill="transparent"
-                  stroke="#0c5df4" strokeWidth={strokeWidth}
-                  strokeDasharray={`${iosStroke} ${circ}`}
-                  strokeDashoffset={iosOffset}
-                  transform="rotate(-90 75 75)"
-                  strokeLinecap="round"
-                />
-              </svg>
-
-              {/* Text inside the Donut */}
+              {/* Center Label */}
               <div style={{
                 position: 'absolute', display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center'
+                alignItems: 'center', justifyContent: 'center', pointerEvents: 'none'
               }}>
-                <span style={{ fontSize: 24, ...Fonts.Bold, color: '#0f172a' }}>{totalBuilds.toLocaleString()}</span>
-                <span style={{ fontSize: 10, fontWeight: 550, color: Colors.textMuted, marginTop: 2 }}>Total Builds</span>
+                <span style={{ fontSize: 24, ...Fonts.Bold, color: '#0f172a' }}>
+                  {totalBuilds.toLocaleString()}
+                </span>
+                <span style={{ fontSize: 10, fontWeight: 550, color: Colors.textMuted, marginTop: 2 }}>
+                  Total Builds
+                </span>
               </div>
             </div>
 
-            {/* Donut Legend */}
+            {/* Legend */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
-              {/* Android */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#10b981' }} />
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} />
                   <span style={{ color: '#334155', fontWeight: 500 }}>Android</span>
                 </div>
                 <strong style={{ color: '#0f172a' }}>{androidPercent}%</strong>
               </div>
-              {/* iOS */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#0c5df4' }} />
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#0c5df4', display: 'inline-block' }} />
                   <span style={{ color: '#334155', fontWeight: 500 }}>iOS</span>
                 </div>
                 <strong style={{ color: '#0f172a' }}>{iosPercent}%</strong>
