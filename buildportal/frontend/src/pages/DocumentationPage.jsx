@@ -236,8 +236,22 @@ export default function DocumentationPage() {
                       <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#e6f4ea', color: '#137333', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', ...Fonts.Bold, flexShrink: 0 }}>2</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <span style={{ fontSize: '14px', ...Fonts.Bold, color: '#1e293b' }}>Google Play Store Credentials</span>
-                        <span style={{ fontSize: '13px', color: '#5f6368', lineHeight: '1.5' }}>
-                          To automate publication to Play Store Internal Testing, ensure you have set up a Google Developer service account and configured its API Key JSON file secrets on your repository runner.
+                        <span style={{ fontSize: '13px', color: '#5f6368', lineHeight: '1.6' }}>
+                          To automate publication to Google Play Store Internal Testing, complete the following setup:
+                          <ul style={{ paddingLeft: '20px', marginTop: '8px', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <li>
+                              <strong>Create Service Account:</strong> Go to the Google Cloud Console, navigate to <strong>IAM &amp; Admin &rarr; Service Accounts</strong>, and click <strong>Create Service Account</strong>.
+                            </li>
+                            <li>
+                              <strong>Generate Private Key:</strong> Select the created service account, go to the <strong>Keys</strong> tab, click <strong>Add Key &rarr; Create new key</strong>, choose <strong>JSON</strong>, and download the generated file.
+                            </li>
+                            <li>
+                              <strong>Link in Google Play Console:</strong> Open Play Console, go to <strong>Users &amp; permissions</strong>, click <strong>Invite new users</strong>, paste the service account email address, and grant it permissions to <strong>Release to testing tracks</strong> and <strong>Manage releases</strong> for your target application.
+                            </li>
+                            <li>
+                              <strong>Add Secret to Repository:</strong> Save the contents of the downloaded JSON file as a secret named <code>BP_PLAY_SERVICE_ACCOUNT_JSON</code> in your GitHub repository secrets. This will be read by the GitHub Action workflow to deploy your bundle.
+                            </li>
+                          </ul>
                         </span>
                       </div>
                     </div>
@@ -306,8 +320,22 @@ export default function DocumentationPage() {
                       <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#edf3fe', color: '#0c5df4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', ...Fonts.Bold, flexShrink: 0 }}>3</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <span style={{ fontSize: '14px', ...Fonts.Bold, color: '#1e293b' }}>Establish Xcode Cloud Workflows</span>
-                        <span style={{ fontSize: '13px', color: '#5f6368', lineHeight: '1.5' }}>
-                          Open your project in Xcode on macOS, configure Xcode Cloud and define a workflow that has a git trigger (e.g., triggered on manual runs or pushes). Ensure the SCM repository is linked in App Store Connect. Specify the workflow name in your <code style={{ backgroundColor: '#f1f5f9', padding: '2px 4px', borderRadius: '4px' }}>buildportal.yml</code>.
+                        <span style={{ fontSize: '13px', color: '#5f6368', lineHeight: '1.6' }}>
+                          To configure and link Xcode Cloud workflows, follow these steps:
+                          <ul style={{ paddingLeft: '20px', marginTop: '8px', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <li>
+                              <strong>Create Workflow in Xcode:</strong> Open your iOS project workspace (<code>.xcworkspace</code>) in Xcode on macOS. Navigate to the <strong>Report Navigator &rarr; Cloud</strong> tab, click <strong>Get Started</strong>, select your target app bundle ID, and click <strong>Create Workflow</strong>.
+                            </li>
+                            <li>
+                              <strong>Configure Trigger &amp; SCM:</strong> In the workflow configurations, add a <strong>Trigger</strong> (e.g., a git trigger set to start on manual runs or branch pushes). Ensure your repository (GitHub/GitLab) is connected and authorized in App Store Connect.
+                            </li>
+                            <li>
+                              <strong>Set Build Actions:</strong> Define the workflow action to <strong>Archive</strong> the iOS application and specify the appropriate TestFlight (Internal/External) post-action distribution group.
+                            </li>
+                            <li>
+                              <strong>Link to Config File:</strong> Note the exact name of the workflow you created (e.g., <code>WebLaunchHub Release</code>) and define it in your <code>buildportal.yml</code> file under the <code>xcode_cloud.workflow_name</code> field.
+                            </li>
+                          </ul>
                         </span>
                       </div>
                     </div>
