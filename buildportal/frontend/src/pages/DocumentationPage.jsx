@@ -42,14 +42,370 @@ xcode_cloud:
   # (Optional) Specify a workflow ID directly
   # workflow_id: "your-workflow-id-here"`;
 
+const androidWorkflowSnippet = `##############################################################################
+# BuildPortal — Android Build Workflow
+#
+# INSTRUCTIONS:
+#   1. Copy this file to your repository at:
+#      .github/workflows/buildportal-android.yml
+#   2. Add the following Repository Secrets in GitHub → Settings → Secrets:
+#      - BP_AWS_ACCESS_KEY_ID      : Your AWS S3 access key
+#      - BP_AWS_SECRET_ACCESS_KEY  : Your AWS S3 secret key
+#      - BP_S3_BUCKET_NAME         : Your S3 bucket name (e.g. buildportal-artifacts)
+#      - BP_AWS_REGION             : Your S3 region (e.g. ap-south-1)
+#      - BP_PLAY_SERVICE_ACCOUNT_JSON : Your Google Play Console Service Account JSON (UAT track only)
+#
+#   The callback_url and callback_secret inputs are injected automatically
+#   by BuildPortal when it dispatches the workflow — do not set them manually.
+##############################################################################
+
+name: BuildPortal Android Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'BuildPortal internal build ID'
+        required: true
+        type: string
+      version_code:
+        description: 'Android version code (integer)'
+        required: false
+        default: '1'
+        type: string
+      version_name:
+        description: 'Android version name (e.g. 1.0.0)'
+        required: false
+        default: '1.0.0'
+        type: string
+      build_type:
+        description: 'Build type: testing | uat | production'
+        required: false
+        default: 'testing'
+        type: string
+      android_format:
+        description: 'Output format: apk | aab'
+        required: false
+        default: 'apk'
+        type: string
+      release_notes:
+        description: 'Release notes for the build'
+        required: false
+        default: 'New build triggered from BuildPortal.'
+        type: string
+      callback_url:
+        description: 'BuildPortal backend callback URL'
+        required: true
+        type: string
+      callback_secret:
+        description: 'Secret to authenticate the callback'
+        required: true
+        type: string
+      keystore_exists:
+        description: 'Whether keystore configuration exists'
+        required: false
+        default: 'false'
+        type: string
+      keystore_url:
+        description: 'Secure presigned URL to download keystore JKS file'
+        required: false
+        type: string
+      keystore_filename:
+        description: 'Original keystore filename'
+        required: false
+        default: 'release.keystore'
+        type: string
+      keystore_password:
+        description: 'Keystore password'
+        required: false
+        type: string
+      keystore_alias:
+        description: 'Key alias'
+        required: false
+        type: string
+      keystore_key_password:
+        description: 'Key password'
+        required: false
+        type: string
+
+jobs:
+  build-android:
+    name: Build Android (\${{ inputs.android_format }})
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 1.5 Notify BuildPortal (started) ──────────────────────────────────
+      - name: Notify BuildPortal (started)
+        run: |
+          JOBS_RES=\$(curl -s -H "Authorization: token \${{ secrets.GITHUB_TOKEN }}" \\
+            -H "Accept: application/vnd.github+json" \\
+            "\${{ github.api_url }}/repos/\${{ github.repository }}/actions/runs/\${{ github.run_id }}/jobs")
+          JOB_URL=\$(echo "\$JOBS_RES" | jq -r '.jobs[0].html_url // empty')
+          if [ -z "\$JOB_URL" ]; then
+            JOB_URL="\${{ github.server_url }}/\${{ github.repository }}/actions/runs/\${{ github.run_id }}"
+          fi
+
+          curl -s -X POST "\${{ inputs.callback_url }}" \\
+            -H "Content-Type: application/json" \\
+            -d "{
+              \\"secret\\": \\"\${{ inputs.callback_secret }}\\",
+              \\"buildId\\": \\"\${{ inputs.build_id }}\\",
+              \\"status\\": \\"building\\",
+              \\"githubRunUrl\\": \\"\$JOB_URL\\"
+            }"
+
+      # ── 2. Set up Java (required by Gradle) ─────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ── 3. Install Node.js (for React Native / Expo projects) ────────────
+      - name: Set up Node.js
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── 4. Install JavaScript dependencies ───────────────────────────────
+      - name: Install JS dependencies
+        if: hashFiles('package.json') != ''
+        run: |
+          if [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+          elif [ -f pnpm-lock.yaml ]; then
+            npm install -g pnpm && pnpm install --frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      # ── 5. Make gradlew executable ───────────────────────────────────────
+      - name: Make gradlew executable
+        run: |
+          if [ -f android/gradlew ]; then
+            chmod +x android/gradlew
+          elif [ -f gradlew ]; then
+            chmod +x gradlew
+          fi
+
+      # ── 6. Set version code and version name ────────────────────────────
+      - name: Set version in build.gradle
+        run: |
+          GRADLE_FILE="android/app/build.gradle"
+          if [ ! -f "\$GRADLE_FILE" ]; then
+            GRADLE_FILE="app/build.gradle"
+          fi
+          if [ -f "\$GRADLE_FILE" ]; then
+            sed -i "s/versionCode [0-9]*/versionCode \${{ inputs.version_code }}/" "\$GRADLE_FILE"
+            sed -i "s/versionName \\"[^\\"]*\\"/versionName \\"\${{ inputs.version_name }}\\"/" "\$GRADLE_FILE"
+            echo "Updated versionCode=\${{ inputs.version_code }} versionName=\${{ inputs.version_name }} in \$GRADLE_FILE"
+          fi
+
+      # ── 6.5. Download Signing Keystore ──────────────────────────────────
+      - name: Download Keystore from S3
+        if: \${{ inputs.keystore_exists == 'true' }}
+        run: |
+          mkdir -p android/app
+          curl -s -L -o "android/app/\${{ inputs.keystore_filename }}" "\${{ inputs.keystore_url }}"
+          echo "Downloaded keystore file and saved to android/app/\${{ inputs.keystore_filename }}"
+
+      # ── 7. Build APK or AAB ──────────────────────────────────────────────
+      - name: Build Android (\${{ inputs.android_format }})
+        id: compile
+        run: |
+          if [ -f android/gradlew ]; then
+            GRADLE="./android/gradlew"
+            GRADLE_DIR="android"
+          else
+            GRADLE="./gradlew"
+            GRADLE_DIR="."
+          fi
+
+          if [ "\${{ inputs.keystore_exists }}" = "true" ]; then
+            KEYSTORE_PATH="\$(pwd)/android/app/\${{ inputs.keystore_filename }}"
+            echo "Building signed \${{ inputs.android_format }} using injected credentials from \$KEYSTORE_PATH..."
+            if [ "\${{ inputs.android_format }}" = "aab" ]; then
+              (cd "\$GRADLE_DIR" && ./gradlew bundleRelease --no-daemon \\
+                -Pandroid.injected.signing.store.file="\$KEYSTORE_PATH" \\
+                -Pandroid.injected.signing.store.password="\${{ inputs.keystore_password }}" \\
+                -Pandroid.injected.signing.key.alias="\${{ inputs.keystore_alias }}" \\
+                -Pandroid.injected.signing.key.password="\${{ inputs.keystore_key_password }}")
+            else
+              (cd "\$GRADLE_DIR" && ./gradlew assembleRelease --no-daemon \\
+                -Pandroid.injected.signing.store.file="\$KEYSTORE_PATH" \\
+                -Pandroid.injected.signing.store.password="\${{ inputs.keystore_password }}" \\
+                -Pandroid.injected.signing.key.alias="\${{ inputs.keystore_alias }}" \\
+                -Pandroid.injected.signing.key.password="\${{ inputs.keystore_key_password }}")
+            fi
+          else
+            echo "Building unsigned/debug-signed \${{ inputs.android_format }}..."
+            if [ "\${{ inputs.android_format }}" = "aab" ]; then
+              (cd "\$GRADLE_DIR" && ./gradlew bundleRelease --no-daemon)
+            else
+              (cd "$GRADLE_DIR" && ./gradlew assembleRelease --no-daemon)
+            fi
+          fi
+
+      # ── 8. Locate the build artifact ─────────────────────────────────────
+      - name: Locate build artifact
+        id: locate
+        run: |
+          if [ "\${{ inputs.android_format }}" = "aab" ]; then
+            ARTIFACT=\summit=$(find . -name "app-release.aab" 2>/dev/null | head -n 1)
+          else
+            ARTIFACT=\$(find . -name "app-release.apk" 2>/dev/null | head -n 1)
+          fi
+          if [ -z "\$ARTIFACT" ]; then
+            echo "ERROR: Build artifact not found!" >&2
+            exit 1
+          fi
+          echo "artifact_path=\$ARTIFACT" >> "\$GITHUB_OUTPUT"
+          echo "Found artifact: \$ARTIFACT"
+
+      # ── 8.5. Extract package name & upload to Google Play Store (UAT & Production) ──
+      - name: Extract Android package name
+        if: \${{ inputs.build_type != 'testing' }}
+        id: pkg
+        run: |
+          GRADLE_FILE="android/app/build.gradle"
+          if [ ! -f "\$GRADLE_FILE" ]; then
+            GRADLE_FILE="app/build.gradle"
+          fi
+          
+          PACKAGE_NAME=""
+          if [ -f "\$GRADLE_FILE" ]; then
+            PACKAGE_NAME=\$(grep -o "applicationId\\s*['\\"][^'\\"]*['\\"]" "\$GRADLE_FILE" | head -n 1 | sed -E "s/applicationId\\s*['\\"]([^'\\"]*)['\\"]/\\1/")
+            if [ -z "\$PACKAGE_NAME" ]; then
+              PACKAGE_NAME=\$(grep -o "applicationId\\s*=\\s*['\\"][^'\\"]*['\\"]" "\$GRADLE_FILE" | head -n 1 | sed -E "s/applicationId\\s*=\\s*['\\"]([^'\\"]*)['\\"]/\\1/")
+            fi
+          fi
+          
+          if [ -z "\$PACKAGE_NAME" ]; then
+            echo "applicationId not found in build.gradle. Falling back to default NearMind package."
+            PACKAGE_NAME="com.spritle.nearmind"
+          fi
+          
+          echo "Parsed Package Name: \$PACKAGE_NAME"
+          echo "package_name=\$PACKAGE_NAME" >> "\$GITHUB_OUTPUT"
+
+      - name: Create dynamic release notes file
+        if: \${{ inputs.build_type != 'testing' }}
+        run: |
+          mkdir -p distribution/whatsnew
+          echo "\${{ inputs.release_notes }}" > distribution/whatsnew/whatsnew-en-US
+          echo "Created dynamic release notes file at distribution/whatsnew/whatsnew-en-US"
+
+      - name: Upload to Google Play Store (UAT & Production Release only)
+        if: \${{ inputs.build_type != 'testing' }}
+        id: play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: \${{ secrets.BP_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: \${{ steps.pkg.outputs.package_name }}
+          releaseFiles: \${{ steps.locate.outputs.artifact_path }}
+          track: internal
+          whatsNewDirectory: distribution/whatsnew
+
+      # ── 9. Upload artifact to BuildPortal ────────────────────────────────
+      - name: Upload artifact to BuildPortal
+        id: upload
+        run: |
+          FILE="\${{ steps.locate.outputs.artifact_path }}"
+          FILENAME=\$(basename "\$FILE")
+          CALLBACK_URL="\${{ inputs.callback_url }}"
+          UPLOAD_URL="\${CALLBACK_URL%/callback}/upload"
+
+          echo "Uploading \$FILE to \$UPLOAD_URL..."
+          RESPONSE=\$(curl -s -S -F "file=@\$FILE" \\
+            -F "secret=\${{ inputs.callback_secret }}" \\
+            -F "buildId=\${{ inputs.build_id }}" \\
+            -F "platform=android" \\
+            "\$UPLOAD_URL")
+
+          echo "Response: \$RESPONSE"
+          S3_KEY=\$(echo "\$RESPONSE" | grep -o '"s3Key":"[^"]*' | grep -o '[^"]*$')
+          if [ -z "\$S3_KEY" ]; then
+            echo "ERROR: Artifact upload to BuildPortal failed!" >&2
+            exit 1
+          fi
+
+          echo "s3_key=\${S3_KEY}" >> "\$GITHUB_OUTPUT"
+          echo "Upload complete: s3_key=\${S3_KEY}"
+
+      # ── 10. Get commit info ───────────────────────────────────────────────
+      - name: Get commit info
+        id: git
+        run: |
+          echo "sha=\$(git rev-parse --short HEAD)" >> "\$GITHUB_OUTPUT"
+          echo "msg=\$(git log -1 --pretty=%s)" >> "\$GITHUB_OUTPUT"
+
+      # ── 11. Callback to BuildPortal — SUCCESS ────────────────────────────
+      - name: Notify BuildPortal (success)
+        if: success()
+        run: |
+          curl -s -X POST "\${{ inputs.callback_url }}" \\
+            -H "Content-Type: application/json" \\
+            -d "{
+              \\"secret\\": \\"\${{ inputs.callback_secret }}\\",
+              \\"buildId\\": \\"\${{ inputs.build_id }}\\",
+              \\"status\\": \\"success\\",
+              \\"s3Key\\": \\"\${{ steps.upload.outputs.s3_key }}\\",
+              \\"commitSha\\": \\"\${{ steps.git.outputs.sha }}\\",
+              \\"commitMessage\\": \\"\${{ steps.git.outputs.msg }}\\",
+              \\"githubRunUrl\\": \\"\${{ github.server_url }}/\${{ github.repository }}/actions/runs/\${{ github.run_id }}\\"
+            }"
+
+      # ── 12. Callback to BuildPortal — FAILURE ────────────────────────────
+      - name: Notify BuildPortal (failure)
+        if: failure()
+        run: |
+          ERROR_MSG="GitHub Actions build failed. Check the workflow logs for details."
+          if [ "\${{ steps.compile.outcome }}" = "failure" ]; then
+            ERROR_MSG="Gradle compilation failed. Please verify your Android gradle configuration, dependencies, and code."
+          elif [ "\${{ steps.locate.outcome }}" = "failure" ]; then
+            ERROR_MSG="Locating compiled build artifact failed. The output binary could not be found."
+          elif [ "\${{ steps.pkg.outcome }}" = "failure" ]; then
+            ERROR_MSG="Extracting package name from build.gradle failed. Ensure applicationId is configured correctly."
+          elif [ "\${{ steps.play.outcome }}" = "failure" ]; then
+            ERROR_MSG="Google Play Store upload failed. Reason: Google Play does not accept APK format for new apps (use AAB) or service account permissions/JSON is invalid."
+          elif [ "\${{ steps.upload.outcome }}" = "failure" ]; then
+            ERROR_MSG="Uploading artifact to BuildPortal failed. Verify backend S3 configurations."
+          fi
+
+          ESCAPED_ERROR=\$(echo "$ERROR_MSG" | sed 's/"/\\\\"/g')
+
+          curl -s -X POST "\${{ inputs.callback_url }}" \\
+            -H "Content-Type: application/json" \\
+            -d "{
+              \\"secret\\": \\"\${{ inputs.callback_secret }}\\",
+              \\"buildId\\": \\"\${{ inputs.build_id }}\\",
+              \\"status\\": \\"failed\\",
+              \\"error\\": \\"\$ESCAPED_ERROR\\",
+              \\"githubRunUrl\\": \\"\${{ github.server_url }}/\${{ github.repository }}/actions/runs/\${{ github.run_id }}\\"
+            }"`;
+
 export default function DocumentationPage() {
   const [activeTab, setActiveTab] = useState('config'); // 'config' | 'android' | 'ios'
-  const [copied, setCopied] = useState(false);
+  const [copiedConfig, setCopiedConfig] = useState(false);
+  const [copiedWorkflow, setCopiedWorkflow] = useState(false);
 
-  const handleCopy = () => {
+  const handleCopyConfig = () => {
     navigator.clipboard.writeText(yamlSnippet);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedConfig(true);
+    setTimeout(() => setCopiedConfig(false), 2000);
+  };
+
+  const handleCopyWorkflow = () => {
+    navigator.clipboard.writeText(androidWorkflowSnippet);
+    setCopiedWorkflow(true);
+    setTimeout(() => setCopiedWorkflow(false), 2000);
   };
 
   return (
@@ -179,9 +535,9 @@ export default function DocumentationPage() {
                   <div style={{ border: '1px solid #dadce0', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#fafafa' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #dadce0', backgroundColor: '#f1f5f9' }}>
                       <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#64748b', fontFamily: 'monospace' }}>buildportal.yml</span>
-                      <button onClick={handleCopy} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#0c5df4', border: 'none', background: 'none', cursor: 'pointer', ...Fonts.Bold }}>
-                        {copied ? <Check size={14} style={{ color: '#137333' }} /> : <Copy size={14} />}
-                        {copied ? 'Copied!' : 'Copy Template'}
+                      <button onClick={handleCopyConfig} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#0c5df4', border: 'none', background: 'none', cursor: 'pointer', ...Fonts.Bold }}>
+                        {copiedConfig ? <Check size={14} style={{ color: '#137333' }} /> : <Copy size={14} />}
+                        {copiedConfig ? 'Copied!' : 'Copy Template'}
                       </button>
                     </div>
                     <pre style={{ margin: 0, padding: '16px', fontSize: '13px', color: '#0f172a', overflowX: 'auto', fontFamily: 'Courier New, Courier, monospace', lineHeight: '1.5' }}>
@@ -221,7 +577,8 @@ export default function DocumentationPage() {
                     </p>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Step 1 */}
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                       <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#e6f4ea', color: '#137333', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', ...Fonts.Bold, flexShrink: 0 }}>1</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -232,8 +589,34 @@ export default function DocumentationPage() {
                       </div>
                     </div>
 
+                    {/* Step 2 */}
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                       <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#e6f4ea', color: '#137333', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', ...Fonts.Bold, flexShrink: 0 }}>2</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                        <span style={{ fontSize: '14px', ...Fonts.Bold, color: '#1e293b' }}>Add GitHub Actions Workflow File</span>
+                        <span style={{ fontSize: '13px', color: '#5f6368', lineHeight: '1.5' }}>
+                          Create a new workflow file at <code style={{ backgroundColor: '#f1f5f9', padding: '2px 4px', borderRadius: '4px', fontFamily: 'monospace' }}>.github/workflows/buildportal-android.yml</code> in your repository and copy the template below. BuildPortal dispatches this workflow dynamically to assemble, sign, and distribute your binary:
+                        </span>
+                        
+                        {/* Code snippet card */}
+                        <div style={{ border: '1px solid #dadce0', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#fafafa', marginTop: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #dadce0', backgroundColor: '#f1f5f9' }}>
+                            <span style={{ fontSize: '12px', ...Fonts.Bold, color: '#64748b', fontFamily: 'monospace' }}>buildportal-android.yml</span>
+                            <button onClick={handleCopyWorkflow} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#0c5df4', border: 'none', background: 'none', cursor: 'pointer', ...Fonts.Bold }}>
+                              {copiedWorkflow ? <Check size={14} style={{ color: '#137333' }} /> : <Copy size={14} />}
+                              {copiedWorkflow ? 'Copied!' : 'Copy Template'}
+                            </button>
+                          </div>
+                          <pre style={{ margin: 0, padding: '16px', fontSize: '12px', color: '#0f172a', maxHeight: '280px', overflowY: 'auto', overflowX: 'auto', fontFamily: 'Courier New, Courier, monospace', lineHeight: '1.45', backgroundColor: '#ffffff' }}>
+                            {androidWorkflowSnippet}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 3 */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                      <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#e6f4ea', color: '#137333', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', ...Fonts.Bold, flexShrink: 0 }}>3</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <span style={{ fontSize: '14px', ...Fonts.Bold, color: '#1e293b' }}>Google Play Store Credentials</span>
                         <span style={{ fontSize: '13px', color: '#5f6368', lineHeight: '1.6' }}>
@@ -256,8 +639,9 @@ export default function DocumentationPage() {
                       </div>
                     </div>
 
+                    {/* Step 4 */}
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                      <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#e6f4ea', color: '#137333', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', ...Fonts.Bold, flexShrink: 0 }}>3</div>
+                      <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#e6f4ea', color: '#137333', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', ...Fonts.Bold, flexShrink: 0 }}>4</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <span style={{ fontSize: '14px', ...Fonts.Bold, color: '#1e293b' }}>Triggering Builds</span>
                         <span style={{ fontSize: '13px', color: '#5f6368', lineHeight: '1.5' }}>
